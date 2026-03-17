@@ -29,7 +29,12 @@ func handleConnection(conn net.Conn) {
 		case "*":
 			if arr, ok := resp.value.([]*respElement); ok {
 				if arr[0].respType == "$" {
-					err := runCmd(conn, arr)
+					res, err := runCmd(arr)
+					if err != nil {
+						fmt.Fprintf(os.Stderr, err.Error())
+						return
+					}
+					_, err = conn.Write([]byte(res))
 					if err != nil {
 						fmt.Fprintf(os.Stderr, err.Error())
 						return

@@ -2,45 +2,44 @@ package main
 
 import (
 	"fmt"
-	"net"
 	"slices"
 	"strconv"
 	"time"
 )
 
-func runCmd(conn net.Conn, args []*respElement) error {
+func runCmd(args []*respElement) (string, error) {
 	switch args[0].value {
 	case "BLPOP":
-		return cmdBlpop(conn, args)
+		return cmdBlpop(args)
 	case "ECHO":
-		return cmdEcho(conn, args)
+		return cmdEcho(args)
 	case "GET":
-		return cmdGet(conn, args)
+		return cmdGet(args)
 	case "LLEN":
-		return cmdLlen(conn, args)
+		return cmdLlen(args)
 	case "LPOP":
-		return cmdLpop(conn, args)
+		return cmdLpop(args)
 	case "LPUSH":
-		return cmdLpush(conn, args)
+		return cmdLpush(args)
 	case "LRANGE":
-		return cmdLrange(conn, args)
+		return cmdLrange(args)
 	case "PING":
-		return cmdPing(conn)
+		return cmdPing()
 	case "RPUSH":
-		return cmdRpush(conn, args)
+		return cmdRpush(args)
 	case "SET":
-		return cmdSet(conn, args)
+		return cmdSet(args)
+	case "TYPE":
+		return cmdType(args)
 	default:
-		return nil
+		return "", nil
 	}
 }
 
-func cmdBlpop(conn net.Conn, args []*respElement) error {
-	var err error
-
+func cmdBlpop(args []*respElement) (string, error) {
 	key, ok := args[1].value.(string)
 	if !ok {
-		return fmt.Errorf("Unable to convert BLPOP key to string")
+		return "", fmt.Errorf("Unable to convert BLPOP key to string")
 	}
 
 	var deadline time.Time
@@ -48,11 +47,11 @@ func cmdBlpop(conn net.Conn, args []*respElement) error {
 	if len(args) > 2 {
 		countStr, ok := args[2].value.(string)
 		if !ok {
-			return fmt.Errorf("Unable to convert BLPOP count to string")
+			return "", fmt.Errorf("Unable to convert BLPOP count to string")
 		}
 		timeFloat, err := strconv.ParseFloat(countStr, 64)
 		if err != nil {
-			return err
+			return "", err
 		}
 		timeoutDuration = time.Millisecond * time.Duration(timeFloat*1000)
 		deadline = time.Now().Add(timeoutDuration)
@@ -74,13 +73,13 @@ func cmdBlpop(conn net.Conn, args []*respElement) error {
 
 	for result == nil {
 		if timeoutDuration > 0 && time.Now().After(deadline) {
-			_, err = conn.Write([]byte("*-1\r\n"))
-			return err
+			// TODO: remove hard coded null array when parser supports it
+			return "*-1\r\n", nil
 		}
 
 		arr, ok := val.value.([]*respElement)
 		if !ok {
-			return fmt.Errorf("Value at key %s is not an array for BLPOP", key)
+			return "", fmt.Errorf("Value at key %s is not an array for BLPOP", key)
 		}
 		if len(arr) > 0 {
 			result = &respElement{
@@ -95,28 +94,17 @@ func cmdBlpop(conn net.Conn, args []*respElement) error {
 		}
 	}
 
-	res, err := writeResp(result)
-	if err != nil {
-		return err
-	}
-
-	_, err = conn.Write([]byte(res))
-	return err
+	return writeResp(result)
 }
 
-func cmdEcho(conn net.Conn, args []*respElement) error {
-	res, err := writeResp(args[1])
-	if err != nil {
-		return err
-	}
-	_, err = conn.Write([]byte(res))
-	return err
+func cmdEcho(args []*respElement) (string, error) {
+	return writeResp(args[1])
 }
 
-func cmdGet(conn net.Conn, args []*respElement) error {
+func cmdGet(args []*respElement) (string, error) {
 	key, ok := args[1].value.(string)
 	if !ok {
-		return fmt.Errorf("Unable to convert GET key to string")
+		return "", fmt.Errorf("Unable to convert GET key to string")
 	}
 
 	val, ok := db[key]
@@ -127,19 +115,13 @@ func cmdGet(conn net.Conn, args []*respElement) error {
 		}
 	}
 
-	res, err := writeResp(val)
-	if err != nil {
-		return err
-	}
-
-	_, err = conn.Write([]byte(res))
-	return err
+	return writeResp(val)
 }
 
-func cmdLlen(conn net.Conn, args []*respElement) error {
+func cmdLlen(args []*respElement) (string, error) {
 	key, ok := args[1].value.(string)
 	if !ok {
-		return fmt.Errorf("Unable to convert LLEN key to string")
+		return "", fmt.Errorf("Unable to convert LLEN key to string")
 	}
 
 	val, ok := db[key]
@@ -152,19 +134,19 @@ func cmdLlen(conn net.Conn, args []*respElement) error {
 
 	arr, ok := val.value.([]*respElement)
 	if !ok {
-		return fmt.Errorf("Value at key %s is not an array for LLEN", key)
+		return "", fmt.Errorf("Value at key %s is not an array for LLEN", key)
 	}
 
-	res := fmt.Sprintf(":%v\r\n", len(arr))
-
-	_, err := conn.Write([]byte(res))
-	return err
+	return writeResp(&respElement{
+		respType: ":",
+		value:    len(arr),
+	})
 }
 
-func cmdLpop(conn net.Conn, args []*respElement) error {
+func cmdLpop(args []*respElement) (string, error) {
 	key, ok := args[1].value.(string)
 	if !ok {
-		return fmt.Errorf("Unable to convert LPOP key to string")
+		return "", fmt.Errorf("Unable to convert LPOP key to string")
 	}
 
 	var count int = 1
@@ -172,11 +154,11 @@ func cmdLpop(conn net.Conn, args []*respElement) error {
 	if len(args) > 2 {
 		countStr, ok := args[2].value.(string)
 		if !ok {
-			return fmt.Errorf("Unable to convert LPOP count to string")
+			return "", fmt.Errorf("Unable to convert LPOP count to string")
 		}
 		count, err = strconv.Atoi(countStr)
 		if err != nil {
-			return err
+			return "", err
 		}
 	}
 
@@ -190,7 +172,7 @@ func cmdLpop(conn net.Conn, args []*respElement) error {
 
 	arr, ok := val.value.([]*respElement)
 	if !ok {
-		return fmt.Errorf("Value at key %s is not an array for LPOP", key)
+		return "", fmt.Errorf("Value at key %s is not an array for LPOP", key)
 	}
 
 	var result *respElement
@@ -212,19 +194,13 @@ func cmdLpop(conn net.Conn, args []*respElement) error {
 		db[key].value = arr
 	}
 
-	res, err := writeResp(result)
-	if err != nil {
-		return err
-	}
-
-	_, err = conn.Write([]byte(res))
-	return err
+	return writeResp(result)
 }
 
-func cmdLpush(conn net.Conn, args []*respElement) error {
+func cmdLpush(args []*respElement) (string, error) {
 	key, ok := args[1].value.(string)
 	if !ok {
-		return fmt.Errorf("Unable to convert LPUSH key to string")
+		return "", fmt.Errorf("Unable to convert LPUSH key to string")
 	}
 
 	val, ok := db[key]
@@ -237,7 +213,7 @@ func cmdLpush(conn net.Conn, args []*respElement) error {
 
 	arr, ok := val.value.([]*respElement)
 	if !ok {
-		return fmt.Errorf("Value at key %s is not an array for LPUSH", key)
+		return "", fmt.Errorf("Value at key %s is not an array for LPUSH", key)
 	}
 
 	prepend := args[2:]
@@ -247,38 +223,38 @@ func cmdLpush(conn net.Conn, args []*respElement) error {
 	val.value = arr
 	db[key] = val
 
-	res := fmt.Sprintf(":%v\r\n", len(arr))
-
-	_, err := conn.Write([]byte(res))
-	return err
+	return writeResp(&respElement{
+		respType: ":",
+		value:    len(arr),
+	})
 }
 
-func cmdLrange(conn net.Conn, args []*respElement) error {
+func cmdLrange(args []*respElement) (string, error) {
 	if len(args) < 4 {
-		return fmt.Errorf("LRANGE requires a key, start index and stop index")
+		return "", fmt.Errorf("LRANGE requires a key, start index and stop index")
 	}
 
 	key, ok := args[1].value.(string)
 	if !ok {
-		return fmt.Errorf("Unable to convert LRANGE key to string")
+		return "", fmt.Errorf("Unable to convert LRANGE key to string")
 	}
 
 	startStr, ok := args[2].value.(string)
 	if !ok {
-		return fmt.Errorf("Unable to convert LRANGE start index to string")
+		return "", fmt.Errorf("Unable to convert LRANGE start index to string")
 	}
 	start, err := strconv.Atoi(startStr)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	stopStr, ok := args[3].value.(string)
 	if !ok {
-		return fmt.Errorf("Unable to convert LRANGE stop index to string")
+		return "", fmt.Errorf("Unable to convert LRANGE stop index to string")
 	}
 	stop, err := strconv.Atoi(stopStr)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	val, ok := db[key]
@@ -291,7 +267,7 @@ func cmdLrange(conn net.Conn, args []*respElement) error {
 
 	arr, ok := val.value.([]*respElement)
 	if !ok {
-		return fmt.Errorf("Unable to convert value at %s to array", key)
+		return "", fmt.Errorf("Unable to convert value at %s to array", key)
 	}
 
 	// negative indexes - values are negative to adding them to array length works as subtraction
@@ -309,17 +285,11 @@ func cmdLrange(conn net.Conn, args []*respElement) error {
 		}
 	}
 
-	var res string
 	if start > len(arr) || (start > stop) {
-		res, err = writeResp(&respElement{
+		return writeResp(&respElement{
 			respType: "*",
 			value:    []*respElement{},
 		})
-		if err != nil {
-			return err
-		}
-		_, err = conn.Write([]byte(res))
-		return err
 	}
 
 	// stop is inclusive
@@ -329,35 +299,23 @@ func cmdLrange(conn net.Conn, args []*respElement) error {
 		stop++
 	}
 
-	res, err = writeResp(&respElement{
+	return writeResp(&respElement{
 		respType: "*",
 		value:    arr[start:stop],
 	})
-	if err != nil {
-		return err
-	}
-
-	_, err = conn.Write([]byte(res))
-	return err
 }
 
-func cmdPing(conn net.Conn) error {
-	res, err := writeResp(&respElement{
+func cmdPing() (string, error) {
+	return writeResp(&respElement{
 		respType: "+",
 		value:    "PONG",
 	})
-	if err != nil {
-		return err
-	}
-
-	_, err = conn.Write([]byte(res))
-	return err
 }
 
-func cmdRpush(conn net.Conn, args []*respElement) error {
+func cmdRpush(args []*respElement) (string, error) {
 	key, ok := args[1].value.(string)
 	if !ok {
-		return fmt.Errorf("Unable to convert RPUSH key to string")
+		return "", fmt.Errorf("Unable to convert RPUSH key to string")
 	}
 
 	val, ok := db[key]
@@ -371,22 +329,22 @@ func cmdRpush(conn net.Conn, args []*respElement) error {
 
 	arr, ok := val.value.([]*respElement)
 	if !ok {
-		return fmt.Errorf("Value at key %s is not an array for RPUSH", key)
+		return "", fmt.Errorf("Value at key %s is not an array for RPUSH", key)
 	}
 
 	arr = append(arr, args[2:]...)
 	db[key].value = arr
 
-	res := fmt.Sprintf(":%v\r\n", len(arr))
-
-	_, err := conn.Write([]byte(res))
-	return err
+	return writeResp(&respElement{
+		respType: ":",
+		value:    len(arr),
+	})
 }
 
-func cmdSet(conn net.Conn, args []*respElement) error {
+func cmdSet(args []*respElement) (string, error) {
 	key, ok := args[1].value.(string)
 	if !ok {
-		return fmt.Errorf("Unable to convert SET key to string")
+		return "", fmt.Errorf("Unable to convert SET key to string")
 	}
 
 	db[key] = args[2]
@@ -396,11 +354,11 @@ func cmdSet(conn net.Conn, args []*respElement) error {
 		case "EX":
 			expiryStr, ok := args[4].value.(string)
 			if !ok {
-				return fmt.Errorf("Unable to convert SET expiry to string")
+				return "", fmt.Errorf("Unable to convert SET expiry to string")
 			}
 			duration, err := time.ParseDuration(expiryStr + "s")
 			if err != nil {
-				return fmt.Errorf("Unable to parse duration: %s", err.Error())
+				return "", fmt.Errorf("Unable to parse duration: %s", err.Error())
 			}
 			time.AfterFunc(duration, func() {
 				delete(db, key)
@@ -408,11 +366,11 @@ func cmdSet(conn net.Conn, args []*respElement) error {
 		case "PX":
 			expiryStr, ok := args[4].value.(string)
 			if !ok {
-				return fmt.Errorf("Unable to convert SET expiry to string")
+				return "", fmt.Errorf("Unable to convert SET expiry to string")
 			}
 			duration, err := time.ParseDuration(expiryStr + "ms")
 			if err != nil {
-				return fmt.Errorf("Unable to parse duration: %s", err.Error())
+				return "", fmt.Errorf("Unable to parse duration: %s", err.Error())
 			}
 			time.AfterFunc(duration, func() {
 				delete(db, key)
@@ -421,14 +379,36 @@ func cmdSet(conn net.Conn, args []*respElement) error {
 		}
 	}
 
-	res, err := writeResp(&respElement{
+	return writeResp(&respElement{
 		respType: "+",
 		value:    "OK",
 	})
-	if err != nil {
-		return err
+}
+
+func cmdType(args []*respElement) (string, error) {
+	key, ok := args[1].value.(string)
+	if !ok {
+		return "", fmt.Errorf("Unable to convert TYPE key to string")
 	}
 
-	_, err = conn.Write([]byte(res))
-	return err
+	val, ok := db[key]
+	if !ok {
+		return writeResp(&respElement{
+			respType: "+",
+			value:    "none",
+		})
+	}
+
+	var res string
+	switch val.respType {
+	// TODO: support additional types
+	case "+", "$":
+		//string
+		res = "string"
+	}
+
+	return writeResp(&respElement{
+		respType: "+",
+		value:    res,
+	})
 }
