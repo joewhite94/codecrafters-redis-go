@@ -7,6 +7,8 @@ import (
 	"strings"
 )
 
+// RESP Parser: https://redis.io/docs/latest/develop/reference/protocol-spec
+
 type respElement struct {
 	respType string
 	value    any

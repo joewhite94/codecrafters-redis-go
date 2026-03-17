@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"net"
+	"strconv"
 	"time"
 )
 
@@ -12,6 +13,8 @@ func runCmd(conn net.Conn, args []respElement) error {
 		return cmdEcho(conn, args)
 	case "GET":
 		return cmdGet(conn, args)
+	case "LRANGE":
+		return cmdLrange(conn, args)
 	case "PING":
 		return cmdPing(conn)
 	case "RPUSH":
@@ -47,6 +50,78 @@ func cmdGet(conn net.Conn, args []respElement) error {
 	}
 
 	res, err := writeResp(val)
+	if err != nil {
+		return err
+	}
+
+	_, err = conn.Write([]byte(res))
+	return err
+}
+
+func cmdLrange(conn net.Conn, args []respElement) error {
+	if len(args) < 4 {
+		return fmt.Errorf("LRANGE requires a key, start index and stop index")
+	}
+
+	key, ok := args[1].value.(string)
+	if !ok {
+		return fmt.Errorf("Unable to convert LRANGE key to string")
+	}
+
+	startStr, ok := args[2].value.(string)
+	if !ok {
+		return fmt.Errorf("Unable to convert LRANGE start index to string")
+	}
+	start, err := strconv.Atoi(startStr)
+	if err != nil {
+		return err
+	}
+
+	stopStr, ok := args[3].value.(string)
+	if !ok {
+		return fmt.Errorf("Unable to convert LRANGE stop index to string")
+	}
+	stop, err := strconv.Atoi(stopStr)
+	if err != nil {
+		return err
+	}
+
+	val, ok := db[key]
+	if !ok {
+		val = respElement{
+			respType: "*",
+			value:    []respElement{},
+		}
+	}
+
+	arr, ok := val.value.([]respElement)
+	if !ok {
+		return fmt.Errorf("Unable to convert value at %s to array", key)
+	}
+
+	var res string
+	if start > len(arr) || start > stop {
+		res, err = writeResp(respElement{
+			respType: "*",
+			value:    []respElement{},
+		})
+		if err != nil {
+			return err
+		}
+		return nil
+	}
+
+	// stop is inclusive
+	if stop > len(arr) {
+		stop = len(arr)
+	} else {
+		stop++
+	}
+
+	res, err = writeResp(respElement{
+		respType: "*",
+		value:    arr[start:stop],
+	})
 	if err != nil {
 		return err
 	}
