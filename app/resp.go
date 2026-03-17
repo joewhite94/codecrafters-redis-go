@@ -5,16 +5,18 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // RESP Parser: https://redis.io/docs/latest/develop/reference/protocol-spec
 
 type respElement struct {
 	respType string
+	mu       sync.Mutex
 	value    any
 }
 
-func writeResp(elem respElement) (string, error) {
+func writeResp(elem *respElement) (string, error) {
 	var err error
 	var res string
 
@@ -50,7 +52,7 @@ func writeResp(elem respElement) (string, error) {
 		}
 	case "*":
 		// array: *<number-of-elements>\r\n<element-1>...<element-n>
-		value, ok := elem.value.([]respElement)
+		value, ok := elem.value.([]*respElement)
 		if !ok {
 			err = fmt.Errorf("Error encoding array %v to resp", elem.value)
 			break
@@ -106,7 +108,7 @@ func writeResp(elem respElement) (string, error) {
 	return res, err
 }
 
-func readResp(elems string, index int) (respElement, int, error) {
+func readResp(elems string, index int) (*respElement, int, error) {
 	respType := string(elems[index])
 	elem := strings.TrimPrefix(elems[index:], respType)
 	index += 1
@@ -154,10 +156,10 @@ func readResp(elems string, index int) (respElement, int, error) {
 		}
 		index += len(firstElem) + 2
 
-		array := make([]respElement, elemCount)
+		array := make([]*respElement, elemCount)
 		var valuesAdded int
 		for valuesAdded < len(array) {
-			var subElem respElement
+			var subElem *respElement
 			subElem, index, err = readResp(elems, index)
 			if err != nil {
 				break
@@ -209,9 +211,9 @@ func readResp(elems string, index int) (respElement, int, error) {
 	}
 
 	if err != nil {
-		return respElement{}, 0, err
+		return &respElement{}, 0, err
 	}
-	return respElement{
+	return &respElement{
 		respType: respType,
 		value:    value,
 	}, index, nil

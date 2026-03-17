@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"slices"
@@ -8,8 +9,10 @@ import (
 	"time"
 )
 
-func runCmd(conn net.Conn, args []respElement) error {
+func runCmd(conn net.Conn, args []*respElement) error {
 	switch args[0].value {
+	case "BLPOP":
+		return cmdBlpop(conn, args)
 	case "ECHO":
 		return cmdEcho(conn, args)
 	case "GET":
@@ -33,7 +36,74 @@ func runCmd(conn net.Conn, args []respElement) error {
 	}
 }
 
-func cmdEcho(conn net.Conn, args []respElement) error {
+func cmdBlpop(conn net.Conn, args []*respElement) error {
+	key, ok := args[1].value.(string)
+	if !ok {
+		return fmt.Errorf("Unable to convert BLPOP key to string")
+	}
+
+	ctx := context.Background()
+
+	var timeout time.Duration = 0
+	var err error
+	if len(args) > 2 {
+		countStr, ok := args[2].value.(string)
+		if !ok {
+			return fmt.Errorf("Unable to convert BLPOP count to string")
+		}
+		timeInt, err := strconv.Atoi(countStr)
+		if err != nil {
+			return err
+		}
+		timeout = time.Duration(timeInt)
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(context.Background(), timeout*time.Second)
+		defer cancel()
+	}
+
+	val, ok := db[key]
+	if !ok {
+		val = &respElement{
+			respType: "*",
+			value:    []*respElement{},
+		}
+		db[key] = val
+	}
+
+	val.mu.Lock()
+	defer val.mu.Unlock()
+
+	var result *respElement
+	for result == nil {
+		select {
+		case <-ctx.Done():
+			return nil
+		default:
+		}
+		arr, ok := val.value.([]*respElement)
+		if !ok {
+			return fmt.Errorf("Value at key %s is not an array for BLPOP", key)
+		}
+		if len(arr) > 0 {
+			result = arr[0]
+			arr = arr[1:]
+			*db[key] = respElement{
+				respType: "*",
+				value:    arr,
+			}
+		}
+	}
+
+	res, err := writeResp(result)
+	if err != nil {
+		return err
+	}
+
+	_, err = conn.Write([]byte(res))
+	return err
+}
+
+func cmdEcho(conn net.Conn, args []*respElement) error {
 	res, err := writeResp(args[1])
 	if err != nil {
 		return err
@@ -42,7 +112,7 @@ func cmdEcho(conn net.Conn, args []respElement) error {
 	return err
 }
 
-func cmdGet(conn net.Conn, args []respElement) error {
+func cmdGet(conn net.Conn, args []*respElement) error {
 	key, ok := args[1].value.(string)
 	if !ok {
 		return fmt.Errorf("Unable to convert GET key to string")
@@ -50,7 +120,7 @@ func cmdGet(conn net.Conn, args []respElement) error {
 
 	val, ok := db[key]
 	if !ok {
-		val = respElement{
+		val = &respElement{
 			respType: "$",
 			value:    "",
 		}
@@ -65,7 +135,7 @@ func cmdGet(conn net.Conn, args []respElement) error {
 	return err
 }
 
-func cmdLlen(conn net.Conn, args []respElement) error {
+func cmdLlen(conn net.Conn, args []*respElement) error {
 	key, ok := args[1].value.(string)
 	if !ok {
 		return fmt.Errorf("Unable to convert LLEN key to string")
@@ -73,13 +143,13 @@ func cmdLlen(conn net.Conn, args []respElement) error {
 
 	val, ok := db[key]
 	if !ok {
-		val = respElement{
+		val = &respElement{
 			respType: "*",
-			value:    []respElement{},
+			value:    []*respElement{},
 		}
 	}
 
-	arr, ok := val.value.([]respElement)
+	arr, ok := val.value.([]*respElement)
 	if !ok {
 		return fmt.Errorf("Value at key %s is not an array for LLEN", key)
 	}
@@ -90,10 +160,10 @@ func cmdLlen(conn net.Conn, args []respElement) error {
 	return err
 }
 
-func cmdLpop(conn net.Conn, args []respElement) error {
+func cmdLpop(conn net.Conn, args []*respElement) error {
 	key, ok := args[1].value.(string)
 	if !ok {
-		return fmt.Errorf("Unable to convert LLEN key to string")
+		return fmt.Errorf("Unable to convert LPOP key to string")
 	}
 
 	var count int = 1
@@ -111,26 +181,26 @@ func cmdLpop(conn net.Conn, args []respElement) error {
 
 	val, ok := db[key]
 	if !ok {
-		val = respElement{
+		val = &respElement{
 			respType: "*",
-			value:    []respElement{},
+			value:    []*respElement{},
 		}
 	}
 
-	arr, ok := val.value.([]respElement)
+	arr, ok := val.value.([]*respElement)
 	if !ok {
-		return fmt.Errorf("Value at key %s is not an array for LLEN", key)
+		return fmt.Errorf("Value at key %s is not an array for LPOP", key)
 	}
 
-	var result respElement
+	var result *respElement
 	if len(arr) == 0 {
-		result = respElement{
+		result = &respElement{
 			respType: "$",
 			value:    "",
 		}
 	} else {
 		if count > 1 {
-			result = respElement{
+			result = &respElement{
 				respType: "*",
 				value:    arr[0:count],
 			}
@@ -138,8 +208,10 @@ func cmdLpop(conn net.Conn, args []respElement) error {
 			result = arr[0]
 		}
 		arr = arr[count:]
-		val.value = arr
-		db[key] = val
+		*db[key] = respElement{
+			respType: "*",
+			value:    arr,
+		}
 	}
 
 	res, err := writeResp(result)
@@ -151,7 +223,7 @@ func cmdLpop(conn net.Conn, args []respElement) error {
 	return err
 }
 
-func cmdLpush(conn net.Conn, args []respElement) error {
+func cmdLpush(conn net.Conn, args []*respElement) error {
 	key, ok := args[1].value.(string)
 	if !ok {
 		return fmt.Errorf("Unable to convert LPUSH key to string")
@@ -159,13 +231,13 @@ func cmdLpush(conn net.Conn, args []respElement) error {
 
 	val, ok := db[key]
 	if !ok {
-		val = respElement{
+		val = &respElement{
 			respType: "*",
-			value:    []respElement{},
+			value:    []*respElement{},
 		}
 	}
 
-	arr, ok := val.value.([]respElement)
+	arr, ok := val.value.([]*respElement)
 	if !ok {
 		return fmt.Errorf("Value at key %s is not an array for LPUSH", key)
 	}
@@ -183,7 +255,7 @@ func cmdLpush(conn net.Conn, args []respElement) error {
 	return err
 }
 
-func cmdLrange(conn net.Conn, args []respElement) error {
+func cmdLrange(conn net.Conn, args []*respElement) error {
 	if len(args) < 4 {
 		return fmt.Errorf("LRANGE requires a key, start index and stop index")
 	}
@@ -213,13 +285,13 @@ func cmdLrange(conn net.Conn, args []respElement) error {
 
 	val, ok := db[key]
 	if !ok {
-		val = respElement{
+		val = &respElement{
 			respType: "*",
-			value:    []respElement{},
+			value:    []*respElement{},
 		}
 	}
 
-	arr, ok := val.value.([]respElement)
+	arr, ok := val.value.([]*respElement)
 	if !ok {
 		return fmt.Errorf("Unable to convert value at %s to array", key)
 	}
@@ -241,9 +313,9 @@ func cmdLrange(conn net.Conn, args []respElement) error {
 
 	var res string
 	if start > len(arr) || (start > stop) {
-		res, err = writeResp(respElement{
+		res, err = writeResp(&respElement{
 			respType: "*",
-			value:    []respElement{},
+			value:    []*respElement{},
 		})
 		if err != nil {
 			return err
@@ -259,7 +331,7 @@ func cmdLrange(conn net.Conn, args []respElement) error {
 		stop++
 	}
 
-	res, err = writeResp(respElement{
+	res, err = writeResp(&respElement{
 		respType: "*",
 		value:    arr[start:stop],
 	})
@@ -272,7 +344,7 @@ func cmdLrange(conn net.Conn, args []respElement) error {
 }
 
 func cmdPing(conn net.Conn) error {
-	res, err := writeResp(respElement{
+	res, err := writeResp(&respElement{
 		respType: "+",
 		value:    "PONG",
 	})
@@ -284,7 +356,7 @@ func cmdPing(conn net.Conn) error {
 	return err
 }
 
-func cmdRpush(conn net.Conn, args []respElement) error {
+func cmdRpush(conn net.Conn, args []*respElement) error {
 	key, ok := args[1].value.(string)
 	if !ok {
 		return fmt.Errorf("Unable to convert RPUSH key to string")
@@ -292,20 +364,22 @@ func cmdRpush(conn net.Conn, args []respElement) error {
 
 	val, ok := db[key]
 	if !ok {
-		val = respElement{
+		val = &respElement{
 			respType: "*",
-			value:    []respElement{},
+			value:    []*respElement{},
 		}
 	}
 
-	arr, ok := val.value.([]respElement)
+	arr, ok := val.value.([]*respElement)
 	if !ok {
 		return fmt.Errorf("Value at key %s is not an array for RPUSH", key)
 	}
 
 	arr = append(arr, args[2:]...)
-	val.value = arr
-	db[key] = val
+	*val = respElement{
+		respType: "*",
+		value:    arr,
+	}
 
 	res := fmt.Sprintf(":%v\r\n", len(arr))
 
@@ -313,7 +387,7 @@ func cmdRpush(conn net.Conn, args []respElement) error {
 	return err
 }
 
-func cmdSet(conn net.Conn, args []respElement) error {
+func cmdSet(conn net.Conn, args []*respElement) error {
 	key, ok := args[1].value.(string)
 	if !ok {
 		return fmt.Errorf("Unable to convert SET key to string")
@@ -351,7 +425,7 @@ func cmdSet(conn net.Conn, args []respElement) error {
 		}
 	}
 
-	res, err := writeResp(respElement{
+	res, err := writeResp(&respElement{
 		respType: "+",
 		value:    "OK",
 	})

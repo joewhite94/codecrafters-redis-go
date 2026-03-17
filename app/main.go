@@ -6,7 +6,7 @@ import (
 	"os"
 )
 
-var db = map[string]respElement{}
+var db = map[string]*respElement{}
 
 func handleConnection(conn net.Conn) {
 	defer conn.Close()
@@ -27,7 +27,7 @@ func handleConnection(conn net.Conn) {
 
 		switch resp.respType {
 		case "*":
-			if arr, ok := resp.value.([]respElement); ok {
+			if arr, ok := resp.value.([]*respElement); ok {
 				if arr[0].respType == "$" {
 					err := runCmd(conn, arr)
 					if err != nil {
