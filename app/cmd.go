@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"net"
 	"slices"
@@ -42,24 +41,24 @@ func cmdBlpop(conn net.Conn, args []*respElement) error {
 		return fmt.Errorf("Unable to convert BLPOP key to string")
 	}
 
-	ctx := context.Background()
+	//ctx := context.Background()
 
-	var timeout time.Duration = 0
+	//var timeout time.Duration = 0
 	var err error
-	if len(args) > 2 {
-		countStr, ok := args[2].value.(string)
-		if !ok {
-			return fmt.Errorf("Unable to convert BLPOP count to string")
-		}
-		timeInt, err := strconv.Atoi(countStr)
-		if err != nil {
-			return err
-		}
-		timeout = time.Duration(timeInt)
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(context.Background(), timeout*time.Second)
-		defer cancel()
-	}
+	// if len(args) > 2 {
+	// 	countStr, ok := args[2].value.(string)
+	// 	if !ok {
+	// 		return fmt.Errorf("Unable to convert BLPOP count to string")
+	// 	}
+	// 	timeInt, err := strconv.Atoi(countStr)
+	// 	if err != nil {
+	// 		return err
+	// 	}
+	// 	timeout = time.Duration(timeInt)
+	// 	var cancel context.CancelFunc
+	// 	ctx, cancel = context.WithTimeout(context.Background(), timeout*time.Second)
+	// 	defer cancel()
+	// }
 
 	val, ok := db[key]
 	if !ok {
@@ -75,22 +74,25 @@ func cmdBlpop(conn net.Conn, args []*respElement) error {
 
 	var result *respElement
 	for result == nil {
-		select {
-		case <-ctx.Done():
-			return nil
-		default:
-		}
+		// select {
+		// case <-ctx.Done():
+		// 	return nil
+		// default:
+		// }
 		arr, ok := val.value.([]*respElement)
 		if !ok {
 			return fmt.Errorf("Value at key %s is not an array for BLPOP", key)
 		}
 		if len(arr) > 0 {
-			result = arr[0]
-			arr = arr[1:]
-			*db[key] = respElement{
+			result = &respElement{
 				respType: "*",
-				value:    arr,
+				value: []*respElement{
+					args[1],
+					arr[0],
+				},
 			}
+			arr = arr[1:]
+			db[key].value = arr
 		}
 	}
 
@@ -208,10 +210,7 @@ func cmdLpop(conn net.Conn, args []*respElement) error {
 			result = arr[0]
 		}
 		arr = arr[count:]
-		*db[key] = respElement{
-			respType: "*",
-			value:    arr,
-		}
+		db[key].value = arr
 	}
 
 	res, err := writeResp(result)
@@ -364,10 +363,11 @@ func cmdRpush(conn net.Conn, args []*respElement) error {
 
 	val, ok := db[key]
 	if !ok {
-		val = &respElement{
+		db[key] = &respElement{
 			respType: "*",
 			value:    []*respElement{},
 		}
+		val = db[key]
 	}
 
 	arr, ok := val.value.([]*respElement)
@@ -376,10 +376,7 @@ func cmdRpush(conn net.Conn, args []*respElement) error {
 	}
 
 	arr = append(arr, args[2:]...)
-	*val = respElement{
-		respType: "*",
-		value:    arr,
-	}
+	db[key].value = arr
 
 	res := fmt.Sprintf(":%v\r\n", len(arr))
 
