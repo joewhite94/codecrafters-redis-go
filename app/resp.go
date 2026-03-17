@@ -36,7 +36,11 @@ func writeResp(elem respElement) (string, error) {
 			break
 		}
 		length := len(str)
-		res = fmt.Sprintf("$%v\r\n%s\r\n", length, str)
+		if length == 0 {
+			res = "$-1\r\n"
+		} else {
+			res = fmt.Sprintf("$%v\r\n%s\r\n", length, str)
+		}
 	case "*":
 		// array: *<number-of-elements>\r\n<element-1>...<element-n>
 		arr, ok := elem.value.([]respElement)
@@ -121,9 +125,14 @@ func readResp(elems string, index int) (respElement, int, error) {
 			fmt.Fprintf(os.Stderr, "Error parsing resp input: %v", err)
 			break
 		}
-		bulkStr := elem[stringStart : stringStart+length]
-		index += stringStart + len(bulkStr) + 2
-		value = bulkStr
+		if length == -1 {
+			index += stringStart + 2
+			value = ""
+		} else {
+			bulkStr := elem[stringStart : stringStart+length]
+			index += stringStart + len(bulkStr) + 2
+			value = bulkStr
+		}
 	case "*":
 		// array: *<number-of-elements>\r\n<element-1>...<element-n>
 		var elemCount int

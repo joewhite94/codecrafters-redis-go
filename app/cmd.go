@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"net"
+	"time"
 )
 
 func runCmd(conn net.Conn, args []respElement) error {
@@ -35,7 +36,15 @@ func cmdGet(conn net.Conn, args []respElement) error {
 		return fmt.Errorf("Unable to convert GET key to string")
 	}
 
-	res, err := writeResp(db[key])
+	val, ok := db[key]
+	if !ok {
+		val = respElement{
+			respType: "$",
+			value:    "",
+		}
+	}
+
+	res, err := writeResp(val)
 	if err != nil {
 		return err
 	}
@@ -64,6 +73,36 @@ func cmdSet(conn net.Conn, args []respElement) error {
 	}
 
 	db[key] = args[2]
+
+	if len(args) > 3 {
+		switch args[3].value {
+		case "EX":
+			expiryStr, ok := args[4].value.(string)
+			if !ok {
+				return fmt.Errorf("Unable to convert SET expiry to string")
+			}
+			duration, err := time.ParseDuration(expiryStr + "s")
+			if err != nil {
+				return fmt.Errorf("Unable to parse duration: %s", err.Error())
+			}
+			time.AfterFunc(duration, func() {
+				delete(db, key)
+			})
+		case "PX":
+			expiryStr, ok := args[4].value.(string)
+			if !ok {
+				return fmt.Errorf("Unable to convert SET expiry to string")
+			}
+			duration, err := time.ParseDuration(expiryStr + "ms")
+			if err != nil {
+				return fmt.Errorf("Unable to parse duration: %s", err.Error())
+			}
+			time.AfterFunc(duration, func() {
+				delete(db, key)
+			})
+		default:
+		}
+	}
 
 	res, err := writeResp(respElement{
 		respType: "+",
