@@ -96,6 +96,19 @@ func cmdLpop(conn net.Conn, args []respElement) error {
 		return fmt.Errorf("Unable to convert LLEN key to string")
 	}
 
+	var count int = 1
+	var err error
+	if len(args) > 2 {
+		countStr, ok := args[2].value.(string)
+		if !ok {
+			return fmt.Errorf("Unable to convert LPOP count to string")
+		}
+		count, err = strconv.Atoi(countStr)
+		if err != nil {
+			return err
+		}
+	}
+
 	val, ok := db[key]
 	if !ok {
 		val = respElement{
@@ -109,18 +122,29 @@ func cmdLpop(conn net.Conn, args []respElement) error {
 		return fmt.Errorf("Value at key %s is not an array for LLEN", key)
 	}
 
-	var res string
-	var err error
+	var result respElement
 	if len(arr) == 0 {
-		res = "$-1\r\n"
-	} else {
-		res, err = writeResp(arr[0])
-		if err != nil {
-			return err
+		result = respElement{
+			respType: "$",
+			value:    "",
 		}
-		arr = arr[1:]
+	} else {
+		if count > 1 {
+			result = respElement{
+				respType: "*",
+				value:    arr[0:count],
+			}
+		} else {
+			result = arr[0]
+		}
+		arr = arr[count:]
 		val.value = arr
 		db[key] = val
+	}
+
+	res, err := writeResp(result)
+	if err != nil {
+		return err
 	}
 
 	_, err = conn.Write([]byte(res))
