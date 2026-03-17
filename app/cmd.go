@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"net"
+	"slices"
 	"strconv"
 	"time"
 )
@@ -13,6 +14,8 @@ func runCmd(conn net.Conn, args []respElement) error {
 		return cmdEcho(conn, args)
 	case "GET":
 		return cmdGet(conn, args)
+	case "LPUSH":
+		return cmdLpush(conn, args)
 	case "LRANGE":
 		return cmdLrange(conn, args)
 	case "PING":
@@ -55,6 +58,38 @@ func cmdGet(conn net.Conn, args []respElement) error {
 	}
 
 	_, err = conn.Write([]byte(res))
+	return err
+}
+
+func cmdLpush(conn net.Conn, args []respElement) error {
+	key, ok := args[1].value.(string)
+	if !ok {
+		return fmt.Errorf("Unable to convert LPUSH key to string")
+	}
+
+	val, ok := db[key]
+	if !ok {
+		val = respElement{
+			respType: "*",
+			value:    []respElement{},
+		}
+	}
+
+	arr, ok := val.value.([]respElement)
+	if !ok {
+		return fmt.Errorf("Value at key %s is not an array for LPUSH", key)
+	}
+
+	prepend := args[2:]
+	slices.Reverse(prepend)
+
+	arr = append(prepend, arr...)
+	val.value = arr
+	db[key] = val
+
+	res := fmt.Sprintf(":%v\r\n", len(arr))
+
+	_, err := conn.Write([]byte(res))
 	return err
 }
 
@@ -162,7 +197,7 @@ func cmdPing(conn net.Conn) error {
 func cmdRpush(conn net.Conn, args []respElement) error {
 	key, ok := args[1].value.(string)
 	if !ok {
-		return fmt.Errorf("Unable to convert SET key to string")
+		return fmt.Errorf("Unable to convert RPUSH key to string")
 	}
 
 	val, ok := db[key]
