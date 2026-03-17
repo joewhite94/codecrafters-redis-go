@@ -14,6 +14,8 @@ func runCmd(conn net.Conn, args []respElement) error {
 		return cmdEcho(conn, args)
 	case "GET":
 		return cmdGet(conn, args)
+	case "LLEN":
+		return cmdLlen(conn, args)
 	case "LPUSH":
 		return cmdLpush(conn, args)
 	case "LRANGE":
@@ -58,6 +60,31 @@ func cmdGet(conn net.Conn, args []respElement) error {
 	}
 
 	_, err = conn.Write([]byte(res))
+	return err
+}
+
+func cmdLlen(conn net.Conn, args []respElement) error {
+	key, ok := args[1].value.(string)
+	if !ok {
+		return fmt.Errorf("Unable to convert LLEN key to string")
+	}
+
+	val, ok := db[key]
+	if !ok {
+		val = respElement{
+			respType: "*",
+			value:    []respElement{},
+		}
+	}
+
+	arr, ok := val.value.([]respElement)
+	if !ok {
+		return fmt.Errorf("Value at key %s is not an array for LLEN", key)
+	}
+
+	res := fmt.Sprintf(":%v\r\n", len(arr))
+
+	_, err := conn.Write([]byte(res))
 	return err
 }
 
