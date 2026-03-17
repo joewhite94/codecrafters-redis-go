@@ -19,38 +19,43 @@ func writeResp(elem respElement) (string, error) {
 	switch elem.respType {
 	case "+":
 		// simple string: +STR\r\n
-		str, ok := elem.value.(string)
+		value, ok := elem.value.(string)
 		if !ok {
 			err = fmt.Errorf("Error encoding string %v to resp", elem.value)
 			break
 		}
-		res = fmt.Sprintf("+%s\r\n", str)
+		res = fmt.Sprintf("+%s\r\n", value)
 	case ":":
 		// integer: :[<+|->]<value>\r\n
-		err = fmt.Errorf("Unimplemented")
+		value, ok := elem.value.(int)
+		if !ok {
+			err = fmt.Errorf("Error encoding int %v to resp", elem.value)
+		}
+		res = fmt.Sprintf(":%v\r\n", value)
 	case "$":
 		// bulk string: $<length>\r\n<data>\r\n
-		str, ok := elem.value.(string)
+		value, ok := elem.value.(string)
 		if !ok {
 			err = fmt.Errorf("Error encoding string %v to resp", elem.value)
 			break
 		}
-		length := len(str)
+		length := len(value)
 		if length == 0 {
+			// null bulk string
 			res = "$-1\r\n"
 		} else {
-			res = fmt.Sprintf("$%v\r\n%s\r\n", length, str)
+			res = fmt.Sprintf("$%v\r\n%s\r\n", length, value)
 		}
 	case "*":
 		// array: *<number-of-elements>\r\n<element-1>...<element-n>
-		arr, ok := elem.value.([]respElement)
+		value, ok := elem.value.([]respElement)
 		if !ok {
 			err = fmt.Errorf("Error encoding array %v to resp", elem.value)
 			break
 		}
-		length := len(arr)
+		length := len(value)
 		res = fmt.Sprintf("*%v\r\n", length)
-		for _, elem := range arr {
+		for _, elem := range value {
 			var elemRes string
 			elemRes, err = writeResp(elem)
 			if err != nil {
@@ -114,9 +119,11 @@ func readResp(elems string, index int) (respElement, int, error) {
 		value = simpleStr
 	case ":":
 		// integer: :[<+|->]<value>\r\n
-		err = fmt.Errorf("Unimplemented")
+		intStr, _, _ := strings.Cut(elem, "\r\n")
+		index += len(intStr) + 2
+		value, err = strconv.Atoi(intStr)
 	case "$":
-		// bulk string: $<length>\r\n<data>\r\
+		// bulk string: $<length>\r\n<data>\r\n
 		lenStr, _, _ := strings.Cut(elem, "\r\n")
 		stringStart := len(lenStr) + 2
 		var length int
@@ -126,6 +133,7 @@ func readResp(elems string, index int) (respElement, int, error) {
 			break
 		}
 		if length == -1 {
+			// null bulk string
 			index += stringStart + 2
 			value = ""
 		} else {

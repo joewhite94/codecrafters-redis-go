@@ -14,6 +14,8 @@ func runCmd(conn net.Conn, args []respElement) error {
 		return cmdGet(conn, args)
 	case "PING":
 		return cmdPing(conn)
+	case "RPUSH":
+		return cmdRpush(conn, args)
 	case "SET":
 		return cmdSet(conn, args)
 	default:
@@ -63,6 +65,36 @@ func cmdPing(conn net.Conn) error {
 	}
 
 	_, err = conn.Write([]byte(res))
+	return err
+}
+
+func cmdRpush(conn net.Conn, args []respElement) error {
+	key, ok := args[1].value.(string)
+	if !ok {
+		return fmt.Errorf("Unable to convert SET key to string")
+	}
+
+	val, ok := db[key]
+	if !ok {
+		val = respElement{
+			respType: "*",
+			value:    []respElement{},
+		}
+	}
+
+	arr, ok := val.value.([]respElement)
+	if !ok {
+		return fmt.Errorf("Value at key %s is not an array for RPUSH", key)
+	}
+
+	toPush := args[2:]
+
+	val.value = append(arr, toPush...)
+	db[key] = val
+
+	res := fmt.Sprintf(":%v\r\n", len(toPush))
+
+	_, err := conn.Write([]byte(res))
 	return err
 }
 
