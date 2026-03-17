@@ -52,6 +52,7 @@ func writeResp(elem *respElement) (string, error) {
 		}
 	case "*":
 		// array: *<number-of-elements>\r\n<element-1>...<element-n>
+		// TODO: implement null array
 		value, ok := elem.value.([]*respElement)
 		if !ok {
 			err = fmt.Errorf("Error encoding array %v to resp", elem.value)
@@ -147,6 +148,7 @@ func readResp(elems string, index int) (*respElement, int, error) {
 		}
 	case "*":
 		// array: *<number-of-elements>\r\n<element-1>...<element-n>
+		// TODO: implement null array
 		var elemCount int
 		firstElem, _, _ := strings.Cut(elem, "\r\n")
 		elemCount, err = strconv.Atoi(firstElem)

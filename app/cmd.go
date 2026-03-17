@@ -36,29 +36,27 @@ func runCmd(conn net.Conn, args []*respElement) error {
 }
 
 func cmdBlpop(conn net.Conn, args []*respElement) error {
+	var err error
+
 	key, ok := args[1].value.(string)
 	if !ok {
 		return fmt.Errorf("Unable to convert BLPOP key to string")
 	}
 
-	//ctx := context.Background()
-
-	//var timeout time.Duration = 0
-	var err error
-	// if len(args) > 2 {
-	// 	countStr, ok := args[2].value.(string)
-	// 	if !ok {
-	// 		return fmt.Errorf("Unable to convert BLPOP count to string")
-	// 	}
-	// 	timeInt, err := strconv.Atoi(countStr)
-	// 	if err != nil {
-	// 		return err
-	// 	}
-	// 	timeout = time.Duration(timeInt)
-	// 	var cancel context.CancelFunc
-	// 	ctx, cancel = context.WithTimeout(context.Background(), timeout*time.Second)
-	// 	defer cancel()
-	// }
+	var deadline time.Time
+	var timeoutDuration time.Duration
+	if len(args) > 2 {
+		countStr, ok := args[2].value.(string)
+		if !ok {
+			return fmt.Errorf("Unable to convert BLPOP count to string")
+		}
+		timeFloat, err := strconv.ParseFloat(countStr, 64)
+		if err != nil {
+			return err
+		}
+		timeoutDuration = time.Millisecond * time.Duration(timeFloat*1000)
+		deadline = time.Now().Add(timeoutDuration)
+	}
 
 	val, ok := db[key]
 	if !ok {
@@ -73,12 +71,13 @@ func cmdBlpop(conn net.Conn, args []*respElement) error {
 	defer val.mu.Unlock()
 
 	var result *respElement
+
 	for result == nil {
-		// select {
-		// case <-ctx.Done():
-		// 	return nil
-		// default:
-		// }
+		if timeoutDuration > 0 && time.Now().After(deadline) {
+			_, err = conn.Write([]byte("*-1\r\n"))
+			return err
+		}
+
 		arr, ok := val.value.([]*respElement)
 		if !ok {
 			return fmt.Errorf("Value at key %s is not an array for BLPOP", key)
