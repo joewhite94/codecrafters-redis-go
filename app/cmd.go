@@ -87,12 +87,11 @@ func cmdRpush(conn net.Conn, args []respElement) error {
 		return fmt.Errorf("Value at key %s is not an array for RPUSH", key)
 	}
 
-	toPush := args[2:]
-
-	val.value = append(arr, toPush...)
+	arr = append(arr, args[2:]...)
+	val.value = arr
 	db[key] = val
 
-	res := fmt.Sprintf(":%v\r\n", len(toPush))
+	res := fmt.Sprintf(":%v\r\n", len(arr))
 
 	_, err := conn.Write([]byte(res))
 	return err
