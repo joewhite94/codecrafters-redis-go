@@ -6,8 +6,6 @@ import (
 	"os"
 )
 
-var db = map[string]*respElement{}
-
 func handleConnection(conn net.Conn) {
 	defer conn.Close()
 
@@ -25,26 +23,19 @@ func handleConnection(conn net.Conn) {
 			fmt.Fprintf(os.Stderr, err.Error())
 		}
 
-		switch resp.respType {
-		case "*":
-			if arr, ok := resp.value.([]*respElement); ok {
-				if arr[0].respType == "$" {
-					res, err := runCmd(arr)
-					if err != nil {
-						fmt.Fprintf(os.Stderr, err.Error())
-						return
-					}
-					_, err = conn.Write([]byte(res))
-					if err != nil {
-						fmt.Fprintf(os.Stderr, err.Error())
-						return
-					}
-				}
-			} else {
-				fmt.Fprintf(os.Stderr, "Unable to convert array")
+		if arr, ok := resp.(*respArray); ok {
+			res, err := runCmd(arr.value)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, err.Error())
 				return
 			}
-		default:
+			_, err = conn.Write([]byte(res))
+			if err != nil {
+				fmt.Fprintf(os.Stderr, err.Error())
+				return
+			}
+		} else {
+			fmt.Fprintf(os.Stderr, "Unable to parse RESP input")
 			return
 		}
 	}

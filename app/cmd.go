@@ -7,8 +7,12 @@ import (
 	"time"
 )
 
-func runCmd(args []*respElement) (string, error) {
-	switch args[0].value {
+func runCmd(args []respElement) (string, error) {
+	cmd, ok := args[0].(*respBulkString)
+	if !ok {
+		return "", fmt.Errorf("Unable to convert command arg to bulk string")
+	}
+	switch cmd.value {
 	case "BLPOP":
 		return cmdBlpop(args)
 	case "ECHO":
@@ -36,8 +40,8 @@ func runCmd(args []*respElement) (string, error) {
 	}
 }
 
-func cmdBlpop(args []*respElement) (string, error) {
-	key, ok := args[1].value.(string)
+func cmdBlpop(args []respElement) (string, error) {
+	key, ok := args[1].(*respBulkString)
 	if !ok {
 		return "", fmt.Errorf("Unable to convert BLPOP key to string")
 	}
@@ -45,11 +49,11 @@ func cmdBlpop(args []*respElement) (string, error) {
 	var deadline time.Time
 	var timeoutDuration time.Duration
 	if len(args) > 2 {
-		countStr, ok := args[2].value.(string)
+		countStr, ok := args[2].(*respBulkString)
 		if !ok {
 			return "", fmt.Errorf("Unable to convert BLPOP count to string")
 		}
-		timeFloat, err := strconv.ParseFloat(countStr, 64)
+		timeFloat, err := strconv.ParseFloat(countStr.value, 64)
 		if err != nil {
 			return "", err
 		}
@@ -57,19 +61,18 @@ func cmdBlpop(args []*respElement) (string, error) {
 		deadline = time.Now().Add(timeoutDuration)
 	}
 
-	val, ok := db[key]
+	entry, ok := db[key.value]
 	if !ok {
-		val = &respElement{
-			respType: "*",
-			value:    []*respElement{},
+		entry = &dbList{
+			value: []dbEntry{},
 		}
-		db[key] = val
+		db[key.value] = entry
 	}
 
-	val.mu.Lock()
-	defer val.mu.Unlock()
+	entry.Lock()
+	defer entry.Unlock()
 
-	var result *respElement
+	var result respElement
 
 	for result == nil {
 		if timeoutDuration > 0 && time.Now().After(deadline) {
@@ -77,74 +80,73 @@ func cmdBlpop(args []*respElement) (string, error) {
 			return "*-1\r\n", nil
 		}
 
-		arr, ok := val.value.([]*respElement)
+		list, ok := entry.(*dbList)
 		if !ok {
-			return "", fmt.Errorf("Value at key %s is not an array for BLPOP", key)
+			return "", fmt.Errorf("Value at key %s is not list for BLPOP", key)
 		}
-		if len(arr) > 0 {
-			result = &respElement{
-				respType: "*",
-				value: []*respElement{
+		if len(list.value) > 0 {
+			result = &respArray{
+				value: []respElement{
 					args[1],
-					arr[0],
+					list.value[0].ToResp(),
 				},
 			}
-			arr = arr[1:]
-			db[key].value = arr
+			list.value = list.value[1:]
+			db[key.value] = list
 		}
 	}
 
-	return writeResp(result)
+	return result.ToString(), nil
 }
 
-func cmdEcho(args []*respElement) (string, error) {
-	return writeResp(args[1])
+func cmdEcho(args []respElement) (string, error) {
+	return args[1].ToString(), nil
 }
 
-func cmdGet(args []*respElement) (string, error) {
-	key, ok := args[1].value.(string)
+func cmdGet(args []respElement) (string, error) {
+	key, ok := args[1].(*respBulkString)
 	if !ok {
 		return "", fmt.Errorf("Unable to convert GET key to string")
 	}
 
-	val, ok := db[key]
-	if !ok {
-		val = &respElement{
-			respType: "$",
-			value:    "",
+	var res respElement
+	val, ok := db[key.value]
+	if ok {
+		res = val.ToResp()
+	} else {
+		res = &respBulkString{
+			value: "",
 		}
 	}
 
-	return writeResp(val)
+	return res.ToString(), nil
 }
 
-func cmdLlen(args []*respElement) (string, error) {
-	key, ok := args[1].value.(string)
+func cmdLlen(args []respElement) (string, error) {
+	key, ok := args[1].(*respBulkString)
 	if !ok {
 		return "", fmt.Errorf("Unable to convert LLEN key to string")
 	}
 
-	val, ok := db[key]
+	val, ok := db[key.value]
 	if !ok {
-		val = &respElement{
-			respType: "*",
-			value:    []*respElement{},
-		}
+		val = &dbList{}
 	}
 
-	arr, ok := val.value.([]*respElement)
+	arr, ok := val.(*dbList)
 	if !ok {
-		return "", fmt.Errorf("Value at key %s is not an array for LLEN", key)
+		return "", fmt.Errorf("Value at key %s is not list for LLEN", key)
 	}
 
-	return writeResp(&respElement{
-		respType: ":",
-		value:    len(arr),
-	})
+	res := &respInteger{
+		value: len(arr.value),
+	}
+
+	return res.ToString(), nil
 }
 
-func cmdLpop(args []*respElement) (string, error) {
-	key, ok := args[1].value.(string)
+func cmdLpop(args []respElement) (string, error) {
+	key, ok := args[1].(*respBulkString)
 	if !ok {
 		return "", fmt.Errorf("Unable to convert LPOP key to string")
 	}
@@ -152,263 +154,300 @@ func cmdLpop(args []*respElement) (string, error) {
 	var count int = 1
 	var err error
 	if len(args) > 2 {
-		countStr, ok := args[2].value.(string)
+		countStr, ok := args[2].(*respBulkString)
 		if !ok {
 			return "", fmt.Errorf("Unable to convert LPOP count to string")
 		}
-		count, err = strconv.Atoi(countStr)
+		count, err = strconv.Atoi(countStr.value)
 		if err != nil {
 			return "", err
 		}
 	}
 
-	val, ok := db[key]
+	val, ok := db[key.value]
 	if !ok {
-		val = &respElement{
-			respType: "*",
-			value:    []*respElement{},
-		}
+		val = &dbList{}
 	}
 
-	arr, ok := val.value.([]*respElement)
+	list, ok := val.(*dbList)
 	if !ok {
-		return "", fmt.Errorf("Value at key %s is not an array for LPOP", key)
+		return "", fmt.Errorf("Value at key %s is not list for LPOP", key)
 	}
 
-	var result *respElement
-	if len(arr) == 0 {
-		result = &respElement{
-			respType: "$",
-			value:    "",
+	var result respElement
+	if len(list.value) == 0 {
+		result = &respBulkString{
+			value: "",
 		}
 	} else {
 		if count > 1 {
-			result = &respElement{
-				respType: "*",
-				value:    arr[0:count],
+			var res []respElement = make([]respElement, count)
+			for i, e := range list.value[:count] {
+				res[i] = e.ToResp()
+			}
+			result = &respArray{
+				value: res,
 			}
 		} else {
-			result = arr[0]
+			result = list.value[0].ToResp()
 		}
-		arr = arr[count:]
-		db[key].value = arr
+		list.value = list.value[count:]
+		db[key.value] = list
 	}
 
-	return writeResp(result)
+	return result.ToString(), nil
 }
 
-func cmdLpush(args []*respElement) (string, error) {
-	key, ok := args[1].value.(string)
+func cmdLpush(args []respElement) (string, error) {
+	key, ok := args[1].(*respBulkString)
 	if !ok {
 		return "", fmt.Errorf("Unable to convert LPUSH key to string")
 	}
 
-	val, ok := db[key]
+	val, ok := db[key.value]
 	if !ok {
-		val = &respElement{
-			respType: "*",
-			value:    []*respElement{},
+		val = &dbList{}
+	}
+
+	list, ok := val.(*dbList)
+	if !ok {
+		return "", fmt.Errorf("Value at key %s is not list for LPUSH", key)
+	}
+
+	var prepend []dbEntry
+	for _, a := range args[2:] {
+		e, err := a.ToDbEntry()
+		if err != nil {
+			return "", err
 		}
+		prepend = append(prepend, e)
 	}
-
-	arr, ok := val.value.([]*respElement)
-	if !ok {
-		return "", fmt.Errorf("Value at key %s is not an array for LPUSH", key)
-	}
-
-	prepend := args[2:]
 	slices.Reverse(prepend)
 
-	arr = append(prepend, arr...)
-	val.value = arr
-	db[key] = val
+	list.value = append(prepend, list.value...)
+	db[key.value] = list
 
-	return writeResp(&respElement{
-		respType: ":",
-		value:    len(arr),
-	})
+	res := &respInteger{
+		value: len(list.value),
+	}
+
+	return res.ToString(), nil
 }
 
-func cmdLrange(args []*respElement) (string, error) {
+func cmdLrange(args []respElement) (string, error) {
 	if len(args) < 4 {
 		return "", fmt.Errorf("LRANGE requires a key, start index and stop index")
 	}
 
-	key, ok := args[1].value.(string)
+	key, ok := args[1].(*respBulkString)
 	if !ok {
 		return "", fmt.Errorf("Unable to convert LRANGE key to string")
 	}
 
-	startStr, ok := args[2].value.(string)
+	startStr, ok := args[2].(*respBulkString)
 	if !ok {
 		return "", fmt.Errorf("Unable to convert LRANGE start index to string")
 	}
-	start, err := strconv.Atoi(startStr)
+	start, err := strconv.Atoi(startStr.value)
 	if err != nil {
 		return "", err
 	}
 
-	stopStr, ok := args[3].value.(string)
+	stopStr, ok := args[3].(*respBulkString)
 	if !ok {
 		return "", fmt.Errorf("Unable to convert LRANGE stop index to string")
 	}
-	stop, err := strconv.Atoi(stopStr)
+	stop, err := strconv.Atoi(stopStr.value)
 	if err != nil {
 		return "", err
 	}
 
-	val, ok := db[key]
+	val, ok := db[key.value]
 	if !ok {
-		val = &respElement{
-			respType: "*",
-			value:    []*respElement{},
-		}
+		val = &dbList{}
 	}
 
-	arr, ok := val.value.([]*respElement)
+	list, ok := val.(*dbList)
 	if !ok {
-		return "", fmt.Errorf("Unable to convert value at %s to array", key)
+		return "", fmt.Errorf("Unable to convert value at %s to list", key)
 	}
 
 	// negative indexes - values are negative to adding them to array length works as subtraction
 	if start < 0 {
-		start = len(arr) + start
+		start = len(list.value) + start
 		if start < 0 {
 			start = 0
 		}
 	}
 
 	if stop < 0 {
-		stop = len(arr) + stop
+		stop = len(list.value) + stop
 		if stop < 0 {
 			stop = 0
 		}
 	}
 
-	if start > len(arr) || (start > stop) {
-		return writeResp(&respElement{
-			respType: "*",
-			value:    []*respElement{},
-		})
+	if start > len(list.value) || (start > stop) {
+		res := &respArray{
+			value: []respElement{},
+		}
+		return res.ToString(), nil
 	}
 
 	// stop is inclusive
-	if stop > len(arr) {
-		stop = len(arr)
+	if stop > len(list.value) {
+		stop = len(list.value)
 	} else {
 		stop++
 	}
 
-	return writeResp(&respElement{
-		respType: "*",
-		value:    arr[start:stop],
-	})
+	res := &respArray{
+		value: make([]respElement, len(list.value[start:stop])),
+	}
+
+	for i, li := range list.value[start:stop] {
+		res.value[i] = li.ToResp()
+	}
+
+	return res.ToString(), nil
 }
 
 func cmdPing() (string, error) {
-	return writeResp(&respElement{
-		respType: "+",
-		value:    "PONG",
-	})
+	res := &respSimpleString{
+		value: "PONG",
+	}
+	return res.ToString(), nil
 }
 
-func cmdRpush(args []*respElement) (string, error) {
-	key, ok := args[1].value.(string)
+func cmdRpush(args []respElement) (string, error) {
+	key, ok := args[1].(*respBulkString)
 	if !ok {
 		return "", fmt.Errorf("Unable to convert RPUSH key to string")
 	}
 
-	val, ok := db[key]
+	val, ok := db[key.value]
 	if !ok {
-		db[key] = &respElement{
-			respType: "*",
-			value:    []*respElement{},
+		db[key.value] = &dbList{}
+		val = db[key.value]
+	}
+
+	list, ok := val.(*dbList)
+	if !ok {
+		return "", fmt.Errorf("Value at key %s is not list for RPUSH", key.value)
+	}
+
+	var toAppend []dbEntry
+	for _, a := range args[2:] {
+		e, err := a.ToDbEntry()
+		if err != nil {
+			return "", err
 		}
-		val = db[key]
+		toAppend = append(toAppend, e)
 	}
 
-	arr, ok := val.value.([]*respElement)
-	if !ok {
-		return "", fmt.Errorf("Value at key %s is not an array for RPUSH", key)
+	list.value = append(list.value, toAppend...)
+	db[key.value] = list
+
+	res := &respInteger{
+		value: len(list.value),
 	}
 
-	arr = append(arr, args[2:]...)
-	db[key].value = arr
-
-	return writeResp(&respElement{
-		respType: ":",
-		value:    len(arr),
-	})
+	return res.ToString(), nil
 }
 
-func cmdSet(args []*respElement) (string, error) {
-	key, ok := args[1].value.(string)
+func cmdSet(args []respElement) (string, error) {
+	key, ok := args[1].(*respBulkString)
 	if !ok {
 		return "", fmt.Errorf("Unable to convert SET key to string")
 	}
 
-	db[key] = args[2]
+	e, err := args[2].ToDbEntry()
+	if err != nil {
+		return "", err
+	}
+
+	db[key.value] = e
 
 	if len(args) > 3 {
-		switch args[3].value {
+		expiryCmd, ok := args[3].(*respBulkString)
+		if !ok {
+			return "", fmt.Errorf("Unable to convert SET expiry command to string")
+		}
+		switch expiryCmd.value {
 		case "EX":
-			expiryStr, ok := args[4].value.(string)
+			expiryStr, ok := args[4].(*respBulkString)
 			if !ok {
 				return "", fmt.Errorf("Unable to convert SET expiry to string")
 			}
-			duration, err := time.ParseDuration(expiryStr + "s")
+			duration, err := time.ParseDuration(expiryStr.value + "s")
 			if err != nil {
 				return "", fmt.Errorf("Unable to parse duration: %s", err.Error())
 			}
 			time.AfterFunc(duration, func() {
-				delete(db, key)
+				delete(db, key.value)
 			})
 		case "PX":
-			expiryStr, ok := args[4].value.(string)
+			expiryStr, ok := args[4].(*respBulkString)
 			if !ok {
 				return "", fmt.Errorf("Unable to convert SET expiry to string")
 			}
-			duration, err := time.ParseDuration(expiryStr + "ms")
+			duration, err := time.ParseDuration(expiryStr.value + "ms")
 			if err != nil {
 				return "", fmt.Errorf("Unable to parse duration: %s", err.Error())
 			}
 			time.AfterFunc(duration, func() {
-				delete(db, key)
+				delete(db, key.value)
 			})
 		default:
 		}
 	}
 
-	return writeResp(&respElement{
-		respType: "+",
-		value:    "OK",
-	})
+	res := &respSimpleString{
+		value: "OK",
+	}
+
+	return res.ToString(), nil
 }
 
-func cmdType(args []*respElement) (string, error) {
-	key, ok := args[1].value.(string)
+func cmdType(args []respElement) (string, error) {
+	key, ok := args[1].(*respBulkString)
 	if !ok {
 		return "", fmt.Errorf("Unable to convert TYPE key to string")
 	}
 
-	val, ok := db[key]
+	val, ok := db[key.value]
 	if !ok {
-		return writeResp(&respElement{
-			respType: "+",
-			value:    "none",
-		})
+		res := &respSimpleString{
+			value: "none",
+		}
+		return res.ToString(), nil
 	}
 
-	var res string
-	switch val.respType {
-	// TODO: support additional types
-	case "+", "$":
-		//string
-		res = "string"
+	res := &respSimpleString{
+		value: val.Type(),
 	}
-
-	return writeResp(&respElement{
-		respType: "+",
-		value:    res,
-	})
+	return res.ToString(), nil
 }
+
+// func cmdXadd(args []*respElement) (string, error) {
+// 	key, ok := args[1].value.(string)
+// 	if !ok {
+// 		return "", fmt.Errorf("Unable to convert XADD key to string")
+// 	}
+
+// 	val, ok := db[key]
+// 	if !ok {
+// 		db[key] = &respElement{
+// 			respType: "stream",
+// 			value:    []*respElement{},
+// 		}
+// 		val = db[key]
+// 	}
+
+// 	id, ok := args[1].value.(string)
+// 	if !ok {
+// 		return "", fmt.Errorf("Unable to convert XADD id to string")
+// 	}
+
+// 	return id, nil
+// }

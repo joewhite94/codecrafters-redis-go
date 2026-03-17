@@ -5,134 +5,151 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 )
 
 // RESP Parser: https://redis.io/docs/latest/develop/reference/protocol-spec
 
-type respElement struct {
+type respElement interface {
+	ToDbEntry() (dbEntry, error)
+	ToString() string
+	Type() string
+}
+
+type respBaseElement struct {
 	respType string
-	mu       sync.Mutex
-	value    any
 }
 
-func writeResp(elem *respElement) (string, error) {
-	var err error
-	var res string
+func (e *respBaseElement) Type() string {
+	return e.respType
+}
 
-	switch elem.respType {
-	case "+":
-		// simple string: +STR\r\n
-		value, ok := elem.value.(string)
-		if !ok {
-			err = fmt.Errorf("Error encoding string %v to resp", elem.value)
-			break
+type respArray struct {
+	respBaseElement
+	value []respElement
+}
+
+func (a *respArray) ToDbEntry() (dbEntry, error) {
+	var res = make([]dbEntry, len(a.value))
+	for _, subElem := range a.value {
+		subEntry, err := subElem.ToDbEntry()
+		if err != nil {
+			return nil, err
 		}
-		res = fmt.Sprintf("+%s\r\n", value)
-	case ":":
-		// integer: :[<+|->]<value>\r\n
-		value, ok := elem.value.(int)
-		if !ok {
-			err = fmt.Errorf("Error encoding int %v to resp", elem.value)
-		}
-		res = fmt.Sprintf(":%v\r\n", value)
-	case "$":
-		// bulk string: $<length>\r\n<data>\r\n
-		value, ok := elem.value.(string)
-		if !ok {
-			err = fmt.Errorf("Error encoding string %v to resp", elem.value)
-			break
-		}
-		length := len(value)
-		if length == 0 {
-			// null bulk string
-			res = "$-1\r\n"
-		} else {
-			res = fmt.Sprintf("$%v\r\n%s\r\n", length, value)
-		}
-	case "*":
-		// array: *<number-of-elements>\r\n<element-1>...<element-n>
-		// TODO: implement null array
-		value, ok := elem.value.([]*respElement)
-		if !ok {
-			err = fmt.Errorf("Error encoding array %v to resp", elem.value)
-			break
-		}
-		length := len(value)
-		res = fmt.Sprintf("*%v\r\n", length)
-		for _, elem := range value {
-			var elemRes string
-			elemRes, err = writeResp(elem)
-			if err != nil {
-				break
-			}
-			res += elemRes
-		}
-	case "_":
-		// null
-		err = fmt.Errorf("Unimplemented")
-	case "#":
-		// boolean
-		err = fmt.Errorf("Unimplemented")
-	case ",":
-		// double
-		err = fmt.Errorf("Unimplemented")
-	case "(":
-		// bignum
-		err = fmt.Errorf("Unimplemented")
-	case "!":
-		// bulk error
-		err = fmt.Errorf("Unimplemented")
-	case "=":
-		// verbatim string
-		err = fmt.Errorf("Unimplemented")
-	case "%":
-		// map
-		err = fmt.Errorf("Unimplemented")
-	case "|":
-		// attribute
-		err = fmt.Errorf("Unimplemented")
-	case "~":
-		// set
-		err = fmt.Errorf("Unimplemented")
-	case ">":
-		// push
-		err = fmt.Errorf("Unimplemented")
-	case "-":
-		// error
-		err = fmt.Errorf("Received error in input")
-	default:
-		// unknown
-		err = fmt.Errorf("Unknown RESP type %s", elem.respType)
+		res = append(res, subEntry)
 	}
-
-	return res, err
+	return &dbList{
+		dbBaseEntry: dbBaseEntry{
+			dbType: "list",
+		},
+		value: res,
+	}, nil
 }
 
-func readResp(elems string, index int) (*respElement, int, error) {
+func (a *respArray) ToString() string {
+	// array: *<number-of-elements>\r\n<element-1>...<element-n>
+	// TODO: implement null array
+	length := len(a.value)
+	res := fmt.Sprintf("*%v\r\n", length)
+	for _, e := range a.value {
+		res += e.ToString()
+	}
+	return res
+}
+
+type respBulkString struct {
+	respBaseElement
+	value string
+}
+
+func (s *respBulkString) ToDbEntry() (dbEntry, error) {
+	return &dbString{
+		dbBaseEntry: dbBaseEntry{
+			dbType: "string",
+		},
+		value: s.value,
+	}, nil
+}
+
+func (s *respBulkString) ToString() string {
+	// bulk string: $<length>\r\n<data>\r\n
+	length := len(s.value)
+	var res string
+	if length == 0 {
+		// null bulk string
+		res = "$-1\r\n"
+	} else {
+		res = fmt.Sprintf("$%v\r\n%s\r\n", length, s.value)
+	}
+	return res
+}
+
+type respInteger struct {
+	respBaseElement
+	value int
+}
+
+func (i *respInteger) ToDbEntry() (dbEntry, error) {
+	return &dbString{
+		dbBaseEntry: dbBaseEntry{
+			dbType: "string",
+		},
+		value: strconv.Itoa(i.value),
+	}, nil
+}
+
+func (i *respInteger) ToString() string {
+	// integer: :[<+|->]<value>\r\n
+	return fmt.Sprintf(":%v\r\n", i.value)
+}
+
+type respSimpleString struct {
+	respBaseElement
+	value string
+}
+
+func (s *respSimpleString) ToDbEntry() (dbEntry, error) {
+	return &dbString{
+		dbBaseEntry: dbBaseEntry{
+			dbType: "string",
+		},
+		value: s.value,
+	}, nil
+}
+
+func (s *respSimpleString) ToString() string {
+	// simple string: +STR\r\n
+	return fmt.Sprintf("+%s\r\n", s.value)
+}
+
+func readResp(elems string, index int) (respElement, int, error) {
 	respType := string(elems[index])
 	elem := strings.TrimPrefix(elems[index:], respType)
 	index += 1
-	var value any
-	var err error
 
 	switch respType {
 	case "+":
 		// simple string: +STR\r\n
 		simpleStr, _, _ := strings.Cut(elem, "\r\n")
 		index += len(simpleStr) + 2
-		value = simpleStr
+		return &respSimpleString{
+			value: simpleStr,
+		}, index, nil
 	case ":":
 		// integer: :[<+|->]<value>\r\n
 		intStr, _, _ := strings.Cut(elem, "\r\n")
 		index += len(intStr) + 2
-		value, err = strconv.Atoi(intStr)
+		value, err := strconv.Atoi(intStr)
+		if err != nil {
+			return nil, 0, err
+		}
+		return &respInteger{
+			value: value,
+		}, index, nil
 	case "$":
 		// bulk string: $<length>\r\n<data>\r\n
 		lenStr, _, _ := strings.Cut(elem, "\r\n")
 		stringStart := len(lenStr) + 2
-		var length int
-		length, err = strconv.Atoi(lenStr)
+		length, err := strconv.Atoi(lenStr)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error parsing resp input: %v", err)
 			break
@@ -140,28 +157,31 @@ func readResp(elems string, index int) (*respElement, int, error) {
 		if length == -1 {
 			// null bulk string
 			index += stringStart + 2
-			value = ""
+			return &respBulkString{
+				value: "",
+			}, index, nil
 		} else {
 			bulkStr := elem[stringStart : stringStart+length]
 			index += stringStart + len(bulkStr) + 2
-			value = bulkStr
+			return &respBulkString{
+				value: bulkStr,
+			}, index, nil
 		}
 	case "*":
 		// array: *<number-of-elements>\r\n<element-1>...<element-n>
 		// TODO: implement null array
-		var elemCount int
 		firstElem, _, _ := strings.Cut(elem, "\r\n")
-		elemCount, err = strconv.Atoi(firstElem)
+		elemCount, err := strconv.Atoi(firstElem)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error parsing resp input: %v", err)
 			break
 		}
 		index += len(firstElem) + 2
 
-		array := make([]*respElement, elemCount)
+		array := make([]respElement, elemCount)
 		var valuesAdded int
 		for valuesAdded < len(array) {
-			var subElem *respElement
+			var subElem respElement
 			subElem, index, err = readResp(elems, index)
 			if err != nil {
 				break
@@ -173,50 +193,44 @@ func readResp(elems string, index int) (*respElement, int, error) {
 			fmt.Fprintf(os.Stderr, "Error parsing resp input: %v", err)
 			break
 		}
-		value = array
+		return &respArray{
+			value: array,
+		}, index, nil
 	case "_":
 		// null
-		err = fmt.Errorf("Unimplemented")
+		return nil, 0, fmt.Errorf("Unimplemented")
 	case "#":
 		// boolean
-		err = fmt.Errorf("Unimplemented")
+		return nil, 0, fmt.Errorf("Unimplemented")
 	case ",":
 		// double
-		err = fmt.Errorf("Unimplemented")
+		return nil, 0, fmt.Errorf("Unimplemented")
 	case "(":
 		// bignum
-		err = fmt.Errorf("Unimplemented")
+		return nil, 0, fmt.Errorf("Unimplemented")
 	case "!":
 		// bulk error
-		err = fmt.Errorf("Unimplemented")
+		return nil, 0, fmt.Errorf("Unimplemented")
 	case "=":
 		// verbatim string
-		err = fmt.Errorf("Unimplemented")
+		return nil, 0, fmt.Errorf("Unimplemented")
 	case "%":
 		// map
-		err = fmt.Errorf("Unimplemented")
+		return nil, 0, fmt.Errorf("Unimplemented")
 	case "|":
 		// attribute
-		err = fmt.Errorf("Unimplemented")
+		return nil, 0, fmt.Errorf("Unimplemented")
 	case "~":
 		// set
-		err = fmt.Errorf("Unimplemented")
+		return nil, 0, fmt.Errorf("Unimplemented")
 	case ">":
 		// push
-		err = fmt.Errorf("Unimplemented")
+		return nil, 0, fmt.Errorf("Unimplemented")
 	case "-":
 		// error
-		err = fmt.Errorf("Received error in input")
+		return nil, 0, fmt.Errorf("Received error in input")
 	default:
 		// unknown
-		err = fmt.Errorf("Unknown RESP type %s", respType)
 	}
-
-	if err != nil {
-		return &respElement{}, 0, err
-	}
-	return &respElement{
-		respType: respType,
-		value:    value,
-	}, index, nil
+	return nil, 0, fmt.Errorf("Unknown RESP type %s", respType)
 }
