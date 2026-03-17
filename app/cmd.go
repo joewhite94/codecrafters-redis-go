@@ -108,7 +108,8 @@ func cmdLrange(conn net.Conn, args []respElement) error {
 		if err != nil {
 			return err
 		}
-		return nil
+		_, err = conn.Write([]byte(res))
+		return err
 	}
 
 	// stop is inclusive
