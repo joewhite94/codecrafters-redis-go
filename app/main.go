@@ -23,14 +23,39 @@ func main() {
 	}
 }
 
-func handleConnection(conn net.Conn) error {
-	buf := make([]byte, 1024)
+func handleConnection(conn net.Conn) {
+	defer conn.Close()
 
 	for {
+		buf := make([]byte, 1024)
+
 		_, err := conn.Read(buf)
 		if err != nil {
-			return err
+			fmt.Fprintf(os.Stderr, err.Error())
+			return
 		}
-		conn.Write([]byte("+PONG\r\n"))
+
+		resp, _, err := readResp(string(buf), 0)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, err.Error())
+		}
+
+		switch resp.respType {
+		case "*":
+			if arr, ok := resp.value.([]respElement); ok {
+				if arr[0].respType == "$" {
+					err := runCmd(conn, arr)
+					if err != nil {
+						fmt.Fprintf(os.Stderr, err.Error())
+						return
+					}
+				}
+			} else {
+				fmt.Fprintf(os.Stderr, "Unable to convert array")
+				return
+			}
+		default:
+			return
+		}
 	}
 }
