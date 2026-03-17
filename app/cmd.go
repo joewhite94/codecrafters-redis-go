@@ -99,8 +99,23 @@ func cmdLrange(conn net.Conn, args []respElement) error {
 		return fmt.Errorf("Unable to convert value at %s to array", key)
 	}
 
+	// negative indexes - values are negative to adding them to array length works as subtraction
+	if start < 0 {
+		start = len(arr) + start
+		if start < 0 {
+			start = 0
+		}
+	}
+
+	if stop < 0 {
+		stop = len(arr) + stop
+		if stop < 0 {
+			stop = 0
+		}
+	}
+
 	var res string
-	if start > len(arr) || start > stop {
+	if start > len(arr) || (start > stop) {
 		res, err = writeResp(respElement{
 			respType: "*",
 			value:    []respElement{},
