@@ -6,6 +6,8 @@ import (
 	"os"
 )
 
+var db = map[string]respElement{}
+
 func main() {
 	l, err := net.Listen("tcp", "0.0.0.0:6379")
 	if err != nil {
