@@ -65,7 +65,7 @@ func cmdBlpop(args []respElement) (string, error) {
 
 	entry, ok := db[key.value]
 	if !ok {
-		entry = NewList([]dbEntry{})
+		entry = NewDbList([]dbEntry{})
 		db[key.value] = entry
 	}
 
@@ -130,7 +130,7 @@ func cmdLlen(args []respElement) (string, error) {
 
 	val, ok := db[key.value]
 	if !ok {
-		val = NewList([]dbEntry{})
+		val = NewDbList([]dbEntry{})
 	}
 
 	arr, ok := val.(*dbList)
@@ -166,7 +166,7 @@ func cmdLpop(args []respElement) (string, error) {
 
 	val, ok := db[key.value]
 	if !ok {
-		val = NewList([]dbEntry{})
+		val = NewDbList([]dbEntry{})
 	}
 
 	list, ok := val.(*dbList)
@@ -206,7 +206,7 @@ func cmdLpush(args []respElement) (string, error) {
 
 	val, ok := db[key.value]
 	if !ok {
-		val = NewList([]dbEntry{})
+		val = NewDbList([]dbEntry{})
 	}
 
 	list, ok := val.(*dbList)
@@ -264,7 +264,7 @@ func cmdLrange(args []respElement) (string, error) {
 
 	val, ok := db[key.value]
 	if !ok {
-		val = NewList([]dbEntry{})
+		val = NewDbList([]dbEntry{})
 	}
 
 	list, ok := val.(*dbList)
@@ -327,7 +327,7 @@ func cmdRpush(args []respElement) (string, error) {
 
 	val, ok := db[key.value]
 	if !ok {
-		db[key.value] = NewList([]dbEntry{})
+		db[key.value] = NewDbList([]dbEntry{})
 		val = db[key.value]
 	}
 
@@ -437,11 +437,11 @@ func cmdXadd(args []respElement) (string, error) {
 
 	val, ok := db[key.value]
 	if !ok {
-		db[key.value] = NewStream([]dbStreamEntry{})
+		db[key.value] = NewDbStream([]dbStreamEntry{})
 		val = db[key.value]
 	}
 
-	list, ok := val.(*dbStream)
+	stream, ok := val.(*dbStream)
 	if !ok {
 		return "", fmt.Errorf("Value at key %s is not stream for XADD", key.value)
 	}
@@ -451,9 +451,45 @@ func cmdXadd(args []respElement) (string, error) {
 		return "", fmt.Errorf("Unable to convert XADD id to string")
 	}
 
+	if id.value == "0-0" {
+		err := &respError{
+			value: "ERR The ID specified in XADD must be greater than 0-0",
+		}
+		return err.ToString(), nil
+	}
+
 	entry := dbStreamEntry{
 		id:     id.value,
 		values: map[string]string{},
+	}
+
+	timestamp, sequence, err := entry.GetTimestampAndSequence()
+	if err != nil {
+		return "", err
+	}
+
+	if len(stream.value) > 0 {
+		prevEntry := stream.value[len(stream.value)-1]
+		prevTimestamp, prevSequence, err := prevEntry.GetTimestampAndSequence()
+		if err != nil {
+			return "", err
+		}
+
+		if prevTimestamp > timestamp {
+			err := &respError{
+				value: "ERR The ID specified in XADD is equal or smaller than the target stream top item",
+			}
+			return err.ToString(), nil
+		}
+
+		if prevTimestamp == timestamp {
+			if prevSequence >= sequence {
+				err := &respError{
+					value: "ERR The ID specified in XADD is equal or smaller than the target stream top item",
+				}
+				return err.ToString(), nil
+			}
+		}
 	}
 
 	// TODO: guard against potential out of range panic caused by supplying insufficient params
@@ -469,8 +505,8 @@ func cmdXadd(args []respElement) (string, error) {
 		entry.values[k.value] = v.value
 	}
 
-	list.value = append(list.value, entry)
-	db[key.value] = list
+	stream.value = append(stream.value, entry)
+	db[key.value] = stream
 
 	res := &respBulkString{
 		value: entry.id,

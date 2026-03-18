@@ -1,6 +1,9 @@
 package main
 
 import (
+	"fmt"
+	"strconv"
+	"strings"
 	"sync"
 )
 
@@ -46,7 +49,7 @@ func (l *dbList) ToResp() respElement {
 	}
 }
 
-func NewList(value []dbEntry) *dbList {
+func NewDbList(value []dbEntry) *dbList {
 	return &dbList{
 		dbBaseEntry: dbBaseEntry{
 			dbType: "list",
@@ -73,7 +76,27 @@ func (s *dbStream) ToResp() respElement {
 	return &respArray{}
 }
 
-func NewStream(value []dbStreamEntry) *dbStream {
+func (e *dbStreamEntry) GetTimestampAndSequence() (int, int, error) {
+	splitId := strings.Split(e.id, "-")
+
+	if len(splitId) != 2 {
+		return 0, 0, fmt.Errorf("Invalid stream id %s", e.id)
+	}
+
+	timestamp, err := strconv.Atoi(splitId[0])
+	if err != nil {
+		return 0, 0, fmt.Errorf("Invalid stream id %s", e.id)
+	}
+
+	sequence, err := strconv.Atoi(splitId[1])
+	if err != nil {
+		return 0, 0, fmt.Errorf("Invalid stream id %s", e.id)
+	}
+
+	return timestamp, sequence, nil
+}
+
+func NewDbStream(value []dbStreamEntry) *dbStream {
 	return &dbStream{
 		dbBaseEntry: dbBaseEntry{
 			dbType: "stream",
@@ -93,7 +116,7 @@ func (s *dbString) ToResp() respElement {
 	}
 }
 
-func NewString(value string) *dbString {
+func NewDbString(value string) *dbString {
 	return &dbString{
 		dbBaseEntry: dbBaseEntry{
 			dbType: "string",

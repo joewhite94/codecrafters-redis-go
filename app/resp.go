@@ -51,7 +51,7 @@ type respBulkString struct {
 }
 
 func (s *respBulkString) ToDbEntry() (dbEntry, error) {
-	return NewString(s.value), nil
+	return NewDbString(s.value), nil
 }
 
 func (s *respBulkString) ToString() string {
@@ -67,12 +67,25 @@ func (s *respBulkString) ToString() string {
 	return res
 }
 
+type respError struct {
+	value string
+}
+
+func (e *respError) ToDbEntry() (dbEntry, error) {
+	return NewDbString(e.value), nil
+}
+
+func (e *respError) ToString() string {
+	// error: -ERROR\r\n
+	return fmt.Sprintf("-%s\r\n", e.value)
+}
+
 type respInteger struct {
 	value int
 }
 
 func (i *respInteger) ToDbEntry() (dbEntry, error) {
-	return NewString(strconv.Itoa(i.value)), nil
+	return NewDbString(strconv.Itoa(i.value)), nil
 }
 
 func (i *respInteger) ToString() string {
@@ -85,7 +98,7 @@ type respSimpleString struct {
 }
 
 func (s *respSimpleString) ToDbEntry() (dbEntry, error) {
-	return NewString(s.value), nil
+	return NewDbString(s.value), nil
 }
 
 func (s *respSimpleString) ToString() string {
