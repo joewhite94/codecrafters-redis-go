@@ -12,19 +12,9 @@ import (
 type respElement interface {
 	ToDbEntry() (dbEntry, error)
 	ToString() string
-	Type() string
-}
-
-type respBaseElement struct {
-	respType string
-}
-
-func (e *respBaseElement) Type() string {
-	return e.respType
 }
 
 type respArray struct {
-	respBaseElement
 	value []respElement
 }
 
@@ -57,7 +47,6 @@ func (a *respArray) ToString() string {
 }
 
 type respBulkString struct {
-	respBaseElement
 	value string
 }
 
@@ -79,7 +68,6 @@ func (s *respBulkString) ToString() string {
 }
 
 type respInteger struct {
-	respBaseElement
 	value int
 }
 
@@ -93,7 +81,6 @@ func (i *respInteger) ToString() string {
 }
 
 type respSimpleString struct {
-	respBaseElement
 	value string
 }
 
