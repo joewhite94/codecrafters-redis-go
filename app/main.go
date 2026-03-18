@@ -24,11 +24,7 @@ func handleConnection(conn net.Conn) {
 		}
 
 		if arr, ok := resp.(*respArray); ok {
-			res, err := runCmd(arr.value)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, err.Error())
-				return
-			}
+			res := runCmd(arr.value)
 			_, err = conn.Write([]byte(res))
 			if err != nil {
 				fmt.Fprintf(os.Stderr, err.Error())
