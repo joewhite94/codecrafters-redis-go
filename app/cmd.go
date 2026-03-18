@@ -75,10 +75,10 @@ func cmdBlpop(args []respElement) string {
 		deadline = time.Now().Add(timeoutDuration)
 	}
 
-	entry, ok := db[key.value]
+	entry, ok := db.Load(key.value)
 	if !ok {
 		entry = NewDbList([]dbEntry{})
-		db[key.value] = entry
+		db.Store(key.value, entry)
 	}
 
 	entry.Lock()
@@ -107,7 +107,7 @@ func cmdBlpop(args []respElement) string {
 				},
 			}
 			list.value = list.value[1:]
-			db[key.value] = list
+			db.Store(key.value, list)
 		}
 	}
 
@@ -128,7 +128,7 @@ func cmdGet(args []respElement) string {
 	}
 
 	var res respElement
-	val, ok := db[key.value]
+	val, ok := db.Load(key.value)
 	if ok {
 		res = val.ToResp()
 	} else {
@@ -149,7 +149,7 @@ func cmdLlen(args []respElement) string {
 		return err.ToString()
 	}
 
-	val, ok := db[key.value]
+	val, ok := db.Load(key.value)
 	if !ok {
 		val = NewDbList([]dbEntry{})
 	}
@@ -197,7 +197,7 @@ func cmdLpop(args []respElement) string {
 		}
 	}
 
-	val, ok := db[key.value]
+	val, ok := db.Load(key.value)
 	if !ok {
 		val = NewDbList([]dbEntry{})
 	}
@@ -228,7 +228,7 @@ func cmdLpop(args []respElement) string {
 			result = list.value[0].ToResp()
 		}
 		list.value = list.value[count:]
-		db[key.value] = list
+		db.Store(key.value, list)
 	}
 
 	return result.ToString()
@@ -243,7 +243,7 @@ func cmdLpush(args []respElement) string {
 		return err.ToString()
 	}
 
-	val, ok := db[key.value]
+	val, ok := db.Load(key.value)
 	if !ok {
 		val = NewDbList([]dbEntry{})
 	}
@@ -270,7 +270,7 @@ func cmdLpush(args []respElement) string {
 	slices.Reverse(prepend)
 
 	list.value = append(prepend, list.value...)
-	db[key.value] = list
+	db.Store(key.value, list)
 
 	res := &respInteger{
 		value: len(list.value),
@@ -325,7 +325,7 @@ func cmdLrange(args []respElement) string {
 		return err.ToString()
 	}
 
-	val, ok := db[key.value]
+	val, ok := db.Load(key.value)
 	if !ok {
 		val = NewDbList([]dbEntry{})
 	}
@@ -394,10 +394,10 @@ func cmdRpush(args []respElement) string {
 		return err.ToString()
 	}
 
-	val, ok := db[key.value]
+	val, ok := db.Load(key.value)
 	if !ok {
-		db[key.value] = NewDbList([]dbEntry{})
-		val = db[key.value]
+		val = NewDbList([]dbEntry{})
+		db.Store(key.value, val)
 	}
 
 	list, ok := val.(*dbList)
@@ -421,7 +421,7 @@ func cmdRpush(args []respElement) string {
 	}
 
 	list.value = append(list.value, toAppend...)
-	db[key.value] = list
+	db.Store(key.value, list)
 
 	res := &respInteger{
 		value: len(list.value),
@@ -447,7 +447,7 @@ func cmdSet(args []respElement) string {
 		return err.ToString()
 	}
 
-	db[key.value] = e
+	db.Store(key.value, e)
 
 	if len(args) > 3 {
 		expiryCmd, ok := args[3].(*respBulkString)
@@ -474,7 +474,7 @@ func cmdSet(args []respElement) string {
 				return err.ToString()
 			}
 			time.AfterFunc(duration, func() {
-				delete(db, key.value)
+				db.m.Delete(key.value)
 			})
 		case "PX":
 			expiryStr, ok := args[4].(*respBulkString)
@@ -492,7 +492,7 @@ func cmdSet(args []respElement) string {
 				return err.ToString()
 			}
 			time.AfterFunc(duration, func() {
-				delete(db, key.value)
+				db.m.Delete(key.value)
 			})
 		default:
 		}
@@ -514,7 +514,7 @@ func cmdType(args []respElement) string {
 		return err.ToString()
 	}
 
-	val, ok := db[key.value]
+	val, ok := db.Load(key.value)
 	if !ok {
 		res := &respSimpleString{
 			value: "none",
@@ -537,10 +537,10 @@ func cmdXadd(args []respElement) string {
 		return err.ToString()
 	}
 
-	val, ok := db[key.value]
+	val, ok := db.Load(key.value)
 	if !ok {
-		db[key.value] = NewDbStream([]dbStreamEntry{})
-		val = db[key.value]
+		val = NewDbStream([]dbStreamEntry{})
+		db.Store(key.value, val)
 	}
 
 	stream, ok := val.(*dbStream)
@@ -626,7 +626,7 @@ func cmdXadd(args []respElement) string {
 	}
 
 	stream.value = append(stream.value, entry)
-	db[key.value] = stream
+	db.Store(key.value, stream)
 
 	res := &respBulkString{
 		value: entry.id,

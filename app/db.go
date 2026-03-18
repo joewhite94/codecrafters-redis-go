@@ -7,7 +7,29 @@ import (
 	"sync"
 )
 
-var db = map[string]dbEntry{}
+type redisDb struct {
+	m sync.Map
+}
+
+func (d *redisDb) Load(key string) (dbEntry, bool) {
+	val, ok := d.m.Load(key)
+	if !ok {
+		return nil, ok
+	}
+	entry, ok := val.(dbEntry)
+	if !ok {
+		return nil, ok
+	}
+	return entry, ok
+}
+
+func (d *redisDb) Store(key string, value dbEntry) {
+	d.m.Store(key, value)
+}
+
+var db = redisDb{
+	m: sync.Map{},
+}
 
 type dbEntry interface {
 	Lock()
