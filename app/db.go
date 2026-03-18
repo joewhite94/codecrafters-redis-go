@@ -31,17 +31,6 @@ func (e *dbBaseEntry) Unlock() {
 	e.mu.Unlock()
 }
 
-type dbString struct {
-	dbBaseEntry
-	value string
-}
-
-func (s *dbString) ToResp() respElement {
-	return &respBulkString{
-		value: s.value,
-	}
-}
-
 type dbList struct {
 	dbBaseEntry
 	value []dbEntry
@@ -54,5 +43,61 @@ func (l *dbList) ToResp() respElement {
 	}
 	return &respArray{
 		value: list,
+	}
+}
+
+func NewList(value []dbEntry) *dbList {
+	return &dbList{
+		dbBaseEntry: dbBaseEntry{
+			dbType: "list",
+		},
+		value: value,
+	}
+}
+
+type dbStream struct {
+	dbBaseEntry
+	value []dbStreamEntry
+}
+
+type dbStreamEntry struct {
+	id     string
+	values map[string]string
+}
+
+func (s *dbStream) ToResp() respElement {
+	// var stream []respElement = make([]respElement, len(s.value))
+	// for i, e := range s.value {
+	// 	stream[i] = e.ToResp()
+	// }
+	return &respArray{}
+}
+
+func NewStream(value []dbStreamEntry) *dbStream {
+	return &dbStream{
+		dbBaseEntry: dbBaseEntry{
+			dbType: "stream",
+		},
+		value: value,
+	}
+}
+
+type dbString struct {
+	dbBaseEntry
+	value string
+}
+
+func (s *dbString) ToResp() respElement {
+	return &respBulkString{
+		value: s.value,
+	}
+}
+
+func NewString(value string) *dbString {
+	return &dbString{
+		dbBaseEntry: dbBaseEntry{
+			dbType: "string",
+		},
+		value: value,
 	}
 }

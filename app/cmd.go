@@ -35,6 +35,8 @@ func runCmd(args []respElement) (string, error) {
 		return cmdSet(args)
 	case "TYPE":
 		return cmdType(args)
+	case "XADD":
+		return cmdXadd(args)
 	default:
 		return "", nil
 	}
@@ -63,9 +65,7 @@ func cmdBlpop(args []respElement) (string, error) {
 
 	entry, ok := db[key.value]
 	if !ok {
-		entry = &dbList{
-			value: []dbEntry{},
-		}
+		entry = NewList([]dbEntry{})
 		db[key.value] = entry
 	}
 
@@ -130,7 +130,7 @@ func cmdLlen(args []respElement) (string, error) {
 
 	val, ok := db[key.value]
 	if !ok {
-		val = &dbList{}
+		val = NewList([]dbEntry{})
 	}
 
 	arr, ok := val.(*dbList)
@@ -166,7 +166,7 @@ func cmdLpop(args []respElement) (string, error) {
 
 	val, ok := db[key.value]
 	if !ok {
-		val = &dbList{}
+		val = NewList([]dbEntry{})
 	}
 
 	list, ok := val.(*dbList)
@@ -206,7 +206,7 @@ func cmdLpush(args []respElement) (string, error) {
 
 	val, ok := db[key.value]
 	if !ok {
-		val = &dbList{}
+		val = NewList([]dbEntry{})
 	}
 
 	list, ok := val.(*dbList)
@@ -264,7 +264,7 @@ func cmdLrange(args []respElement) (string, error) {
 
 	val, ok := db[key.value]
 	if !ok {
-		val = &dbList{}
+		val = NewList([]dbEntry{})
 	}
 
 	list, ok := val.(*dbList)
@@ -327,7 +327,7 @@ func cmdRpush(args []respElement) (string, error) {
 
 	val, ok := db[key.value]
 	if !ok {
-		db[key.value] = &dbList{}
+		db[key.value] = NewList([]dbEntry{})
 		val = db[key.value]
 	}
 
@@ -429,25 +429,52 @@ func cmdType(args []respElement) (string, error) {
 	return res.ToString(), nil
 }
 
-// func cmdXadd(args []*respElement) (string, error) {
-// 	key, ok := args[1].value.(string)
-// 	if !ok {
-// 		return "", fmt.Errorf("Unable to convert XADD key to string")
-// 	}
+func cmdXadd(args []respElement) (string, error) {
+	key, ok := args[1].(*respBulkString)
+	if !ok {
+		return "", fmt.Errorf("Unable to convert XADD key to string")
+	}
 
-// 	val, ok := db[key]
-// 	if !ok {
-// 		db[key] = &respElement{
-// 			respType: "stream",
-// 			value:    []*respElement{},
-// 		}
-// 		val = db[key]
-// 	}
+	val, ok := db[key.value]
+	if !ok {
+		db[key.value] = NewStream([]dbStreamEntry{})
+		val = db[key.value]
+	}
 
-// 	id, ok := args[1].value.(string)
-// 	if !ok {
-// 		return "", fmt.Errorf("Unable to convert XADD id to string")
-// 	}
+	list, ok := val.(*dbStream)
+	if !ok {
+		return "", fmt.Errorf("Value at key %s is not stream for XADD", key.value)
+	}
 
-// 	return id, nil
-// }
+	id, ok := args[2].(*respBulkString)
+	if !ok {
+		return "", fmt.Errorf("Unable to convert XADD id to string")
+	}
+
+	entry := dbStreamEntry{
+		id:     id.value,
+		values: map[string]string{},
+	}
+
+	// TODO: guard against potential out of range panic caused by supplying insufficient params
+	for i := 3; i < len(args); i += 2 {
+		k, ok := args[i].(*respBulkString)
+		if !ok {
+			return "", fmt.Errorf("Unable to convert XADD map key to string")
+		}
+		v, ok := args[i+1].(*respBulkString)
+		if !ok {
+			return "", fmt.Errorf("Unable to convert XADD map key to string")
+		}
+		entry.values[k.value] = v.value
+	}
+
+	list.value = append(list.value, entry)
+	db[key.value] = list
+
+	res := &respBulkString{
+		value: entry.id,
+	}
+
+	return res.ToString(), nil
+}

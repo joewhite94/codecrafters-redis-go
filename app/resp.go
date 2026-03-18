@@ -62,12 +62,7 @@ type respBulkString struct {
 }
 
 func (s *respBulkString) ToDbEntry() (dbEntry, error) {
-	return &dbString{
-		dbBaseEntry: dbBaseEntry{
-			dbType: "string",
-		},
-		value: s.value,
-	}, nil
+	return NewString(s.value), nil
 }
 
 func (s *respBulkString) ToString() string {
@@ -89,12 +84,7 @@ type respInteger struct {
 }
 
 func (i *respInteger) ToDbEntry() (dbEntry, error) {
-	return &dbString{
-		dbBaseEntry: dbBaseEntry{
-			dbType: "string",
-		},
-		value: strconv.Itoa(i.value),
-	}, nil
+	return NewString(strconv.Itoa(i.value)), nil
 }
 
 func (i *respInteger) ToString() string {
@@ -108,12 +98,7 @@ type respSimpleString struct {
 }
 
 func (s *respSimpleString) ToDbEntry() (dbEntry, error) {
-	return &dbString{
-		dbBaseEntry: dbBaseEntry{
-			dbType: "string",
-		},
-		value: s.value,
-	}, nil
+	return NewString(s.value), nil
 }
 
 func (s *respSimpleString) ToString() string {
