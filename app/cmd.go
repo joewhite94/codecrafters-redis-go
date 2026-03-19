@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -559,11 +560,71 @@ func cmdXadd(args []respElement) string {
 		return err.ToString()
 	}
 
-	if id.value == "0-0" {
+	var prevEntry dbStreamEntry
+	var prevTimestamp, prevSequence int
+	if len(stream.value) > 0 {
+		prevEntry = stream.value[len(stream.value)-1]
+		var err error
+		prevTimestamp, prevSequence, err = prevEntry.GetTimestampAndSequence()
+		if err != nil {
+			err := &respError{
+				value: fmt.Sprintf("ERR The ID in stream %s is an invalid format", key.value),
+			}
+			return err.ToString()
+		}
+	}
+
+	var timestamp int
+	var sequence int
+	switch id.value {
+	case "0-0":
 		err := &respError{
 			value: "ERR The ID specified in XADD must be greater than 0-0",
 		}
 		return err.ToString()
+	case "*":
+		timestamp = int(time.Now().UnixMilli())
+		sequence = 0
+		if timestamp == prevTimestamp {
+			sequence = prevSequence + 1
+		}
+
+		id.value = fmt.Sprintf("%d-%d", timestamp, sequence)
+	default:
+		splitId := strings.Split(id.value, "-")
+
+		if len(splitId) != 2 {
+			err := &respError{
+				value: "ERR The ID specified in XADD is an invalid format",
+			}
+			return err.ToString()
+		}
+
+		var err error
+		timestamp, err = strconv.Atoi(splitId[0])
+		if err != nil {
+			err := &respError{
+				value: "ERR The ID specified in XADD is an invalid format",
+			}
+			return err.ToString()
+		}
+
+		if splitId[1] == "*" {
+			sequence = 0
+			if timestamp == prevTimestamp {
+				sequence = prevSequence + 1
+			}
+		} else {
+			var err error
+			sequence, err = strconv.Atoi(splitId[1])
+			if err != nil {
+				err := &respError{
+					value: "ERR The ID specified in XADD is an invalid format",
+				}
+				return err.ToString()
+			}
+		}
+		id.value = fmt.Sprintf("%d-%d", timestamp, sequence)
 	}
 
 	entry := dbStreamEntry{
@@ -571,38 +632,19 @@ func cmdXadd(args []respElement) string {
 		values: map[string]string{},
 	}
 
-	timestamp, sequence, err := entry.GetTimestampAndSequence()
-	if err != nil {
+	if prevTimestamp > timestamp {
 		err := &respError{
-			value: fmt.Sprintf("ERR %s", err.Error()),
+			value: "ERR The ID specified in XADD is equal or smaller than the target stream top item",
 		}
 		return err.ToString()
 	}
 
-	if len(stream.value) > 0 {
-		prevEntry := stream.value[len(stream.value)-1]
-		prevTimestamp, prevSequence, err := prevEntry.GetTimestampAndSequence()
-		if err != nil {
-			err := &respError{
-				value: fmt.Sprintf("ERR %s", err.Error()),
-			}
-			return err.ToString()
-		}
-
-		if prevTimestamp > timestamp {
+	if prevTimestamp == timestamp {
+		if prevSequence >= sequence {
 			err := &respError{
 				value: "ERR The ID specified in XADD is equal or smaller than the target stream top item",
 			}
 			return err.ToString()
-		}
-
-		if prevTimestamp == timestamp {
-			if prevSequence >= sequence {
-				err := &respError{
-					value: "ERR The ID specified in XADD is equal or smaller than the target stream top item",
-				}
-				return err.ToString()
-			}
 		}
 	}
 
