@@ -721,16 +721,22 @@ func cmdXrange(args []respElement) string {
 		return res.ToString()
 	}
 
-	startId := &dbStreamEntryId{
-		value: start.value,
-	}
+	var startId *dbStreamEntryId
+	var startTimestamp, startSequence int
 
-	startTimestamp, startSequence, err := startId.GetTimestampAndSequence()
-	if err != nil {
-		res := &respError{
-			value: "ERR Unable to convert XRANGE start to ID format",
+	if start.value != "-" {
+		startId = &dbStreamEntryId{
+			value: start.value,
 		}
-		return res.ToString()
+
+		var err error
+		startTimestamp, startSequence, err = startId.GetTimestampAndSequence()
+		if err != nil {
+			res := &respError{
+				value: "ERR Unable to convert XRANGE start to ID format",
+			}
+			return res.ToString()
+		}
 	}
 
 	stop, ok := args[3].(*respBulkString)
@@ -741,71 +747,81 @@ func cmdXrange(args []respElement) string {
 		return res.ToString()
 	}
 
-	stopId := &dbStreamEntryId{
-		value: stop.value,
-	}
+	var stopId *dbStreamEntryId
+	var stopTimestamp, stopSequence int
 
-	stopTimestamp, stopSequence, err := stopId.GetTimestampAndSequence()
-	if err != nil {
-		res := &respError{
-			value: "ERR Unable to convert XRANGE stop to ID format",
+	if stop.value != "+" {
+		stopId = &dbStreamEntryId{
+			value: stop.value,
 		}
-		return res.ToString()
-	}
 
-	var startIndex = 0
-	for i, entry := range stream.value {
-		timestamp, sequence, err := entry.id.GetTimestampAndSequence()
+		var err error
+		stopTimestamp, stopSequence, err = stopId.GetTimestampAndSequence()
 		if err != nil {
 			res := &respError{
-				value: "ERR Unable to parse stream entry id",
+				value: "ERR Unable to convert XRANGE stop to ID format",
 			}
 			return res.ToString()
 		}
+	}
 
-		if timestamp < startTimestamp {
-			continue
-		}
+	var startIndex = 0
+	if startId != nil {
+		for i, entry := range stream.value {
+			timestamp, sequence, err := entry.id.GetTimestampAndSequence()
+			if err != nil {
+				res := &respError{
+					value: "ERR Unable to parse stream entry id",
+				}
+				return res.ToString()
+			}
 
-		if timestamp == startTimestamp {
-			if sequence >= startSequence {
+			if timestamp < startTimestamp {
+				continue
+			}
+
+			if timestamp == startTimestamp {
+				if sequence >= startSequence {
+					startIndex = i
+					break
+				}
+			}
+
+			if timestamp > startTimestamp {
 				startIndex = i
 				break
 			}
 		}
-
-		if timestamp > startTimestamp {
-			startIndex = i
-			break
-		}
 	}
 
 	var stopIndex = len(stream.value)
-	for j := len(stream.value) - 1; j > 0; j-- {
-		entry := stream.value[j]
+	if stopId != nil {
+		for j := len(stream.value) - 1; j > 0; j-- {
+			entry := stream.value[j]
 
-		timestamp, sequence, err := entry.id.GetTimestampAndSequence()
-		if err != nil {
-			res := &respError{
-				value: "ERR Unable to parse stream entry id",
+			timestamp, sequence, err := entry.id.GetTimestampAndSequence()
+			if err != nil {
+				res := &respError{
+					value: "ERR Unable to parse stream entry id",
+				}
+				return res.ToString()
 			}
-			return res.ToString()
-		}
 
-		if timestamp > stopTimestamp {
-			continue
-		}
+			if timestamp > stopTimestamp {
+				continue
+			}
 
-		if timestamp == stopTimestamp {
-			if sequence <= stopSequence {
+			if timestamp == stopTimestamp {
+				if sequence <= stopSequence {
+					stopIndex = j + 1
+					break
+				}
+			}
+
+			if timestamp < stopTimestamp {
 				stopIndex = j + 1
 				break
 			}
-		}
-
-		if timestamp < stopTimestamp {
-			stopIndex = j + 1
-			break
 		}
 	}
 
