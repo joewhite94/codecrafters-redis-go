@@ -40,7 +40,9 @@ func (a *respArray) ToString() string {
 	// TODO: implement null array
 	length := len(a.value)
 	res := fmt.Sprintf("*%v\r\n", length)
+	fmt.Println(length)
 	for _, e := range a.value {
+		fmt.Println(e)
 		res += e.ToString()
 	}
 	return res

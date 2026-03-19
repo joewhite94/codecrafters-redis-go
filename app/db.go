@@ -86,33 +86,69 @@ type dbStream struct {
 }
 
 type dbStreamEntry struct {
-	id     string
+	id     dbStreamEntryId
 	values map[string]string
 }
 
-func (s *dbStream) ToResp() respElement {
-	// var stream []respElement = make([]respElement, len(s.value))
-	// for i, e := range s.value {
-	// 	stream[i] = e.ToResp()
-	// }
-	return &respArray{}
+type dbStreamEntryId struct {
+	value string
 }
 
-func (e *dbStreamEntry) GetTimestampAndSequence() (int, int, error) {
-	splitId := strings.Split(e.id, "-")
+func (s *dbStream) ToResp() respElement {
+	var res []respElement = make([]respElement, len(s.value))
+	for i, e := range s.value {
+		res[i] = e.ToResp()
+	}
+	return &respArray{
+		value: res,
+	}
+}
 
-	if len(splitId) != 2 {
-		return 0, 0, fmt.Errorf("Invalid stream id %s", e.id)
+func (e *dbStreamEntry) ToResp() respElement {
+	var res []respElement = make([]respElement, 2)
+	res[0] = &respBulkString{
+		value: e.id.value,
+	}
+	arr := &respArray{
+		value: make([]respElement, len(e.values)*2),
+	}
+	var i = 0
+	for k, v := range e.values {
+		key := &respBulkString{
+			value: k,
+		}
+		value := &respBulkString{
+			value: v,
+		}
+		arr.value[i] = key
+		arr.value[i+1] = value
+		i += 2
+	}
+	res[1] = arr
+	return &respArray{
+		value: res,
+	}
+}
+
+func (i *dbStreamEntryId) GetTimestampAndSequence() (int, int, error) {
+	splitId := strings.Split(i.value, "-")
+
+	if len(splitId) > 2 {
+		return 0, 0, fmt.Errorf("Invalid stream id %s", i.value)
 	}
 
 	timestamp, err := strconv.Atoi(splitId[0])
 	if err != nil {
-		return 0, 0, fmt.Errorf("Invalid stream id %s", e.id)
+		return 0, 0, fmt.Errorf("Invalid stream id %s", i.value)
 	}
 
-	sequence, err := strconv.Atoi(splitId[1])
-	if err != nil {
-		return 0, 0, fmt.Errorf("Invalid stream id %s", e.id)
+	sequence := 0
+	if len(splitId) == 2 {
+		var err error
+		sequence, err = strconv.Atoi(splitId[1])
+		if err != nil {
+			return 0, 0, fmt.Errorf("Invalid stream id %s", i.value)
+		}
 	}
 
 	return timestamp, sequence, nil
