@@ -830,94 +830,106 @@ func cmdXrange(args []respElement) string {
 }
 
 func cmdXread(args []respElement) string {
-	key, ok := args[2].(*respBulkString)
-	if !ok {
+	keysAndStarts := args[2:]
+
+	if len(keysAndStarts)%2 != 0 {
 		res := &respError{
-			value: "ERR Unable to convert XREAD key to string",
+			value: "ERR Insufficient arguments provided for XREAD",
 		}
 		return res.ToString()
 	}
 
-	val, ok := db.Load(key.value)
-	if !ok {
-		res := &respArray{
-			value: []respElement{},
-		}
-		return res.ToString()
-	}
+	halfway := len(keysAndStarts) / 2
 
-	stream, ok := val.(*dbStream)
-	if !ok {
-		res := &respError{
-			value: fmt.Sprintf("ERR Value at %s is not stream", key.value),
-		}
-		return res.ToString()
-	}
+	keys := keysAndStarts[:halfway]
+	starts := keysAndStarts[halfway:]
 
-	start, ok := args[3].(*respBulkString)
-	if !ok {
-		res := &respError{
-			value: "ERR Unable to convert XREAD start to string",
-		}
-		return res.ToString()
-	}
+	var res = NewDbList([]dbEntry{})
 
-	var startIndex = 0
-	if start.value != "-" {
-		startId := &dbStreamEntryId{
-			value: start.value,
-		}
-
-		startTimestamp, startSequence, err := startId.GetTimestampAndSequence()
-		if err != nil {
+	for i := 0; i < halfway; i++ {
+		key, ok := keys[i].(*respBulkString)
+		if !ok {
 			res := &respError{
-				value: "ERR Unable to convert XRANGE start to ID format",
+				value: "ERR Unable to convert XREAD key to string",
 			}
 			return res.ToString()
 		}
 
-		for i, entry := range stream.value {
-			timestamp, sequence, err := entry.id.GetTimestampAndSequence()
+		val, ok := db.Load(key.value)
+		if !ok {
+			res := &respArray{
+				value: []respElement{},
+			}
+			return res.ToString()
+		}
+
+		stream, ok := val.(*dbStream)
+		if !ok {
+			res := &respError{
+				value: fmt.Sprintf("ERR Value at %s is not stream", key.value),
+			}
+			return res.ToString()
+		}
+
+		start, ok := starts[i].(*respBulkString)
+		if !ok {
+			res := &respError{
+				value: "ERR Unable to convert XREAD start to string",
+			}
+			return res.ToString()
+		}
+
+		var startIndex = 0
+		if start.value != "-" {
+			startId := &dbStreamEntryId{
+				value: start.value,
+			}
+
+			startTimestamp, startSequence, err := startId.GetTimestampAndSequence()
 			if err != nil {
 				res := &respError{
-					value: "ERR Unable to parse stream entry id",
+					value: "ERR Unable to convert XRANGE start to ID format",
 				}
 				return res.ToString()
 			}
 
-			if timestamp < startTimestamp {
-				continue
-			}
+			for i, entry := range stream.value {
+				timestamp, sequence, err := entry.id.GetTimestampAndSequence()
+				if err != nil {
+					res := &respError{
+						value: "ERR Unable to parse stream entry id",
+					}
+					return res.ToString()
+				}
 
-			if timestamp == startTimestamp {
-				if sequence == startSequence {
-					startIndex = i + 1
+				if timestamp < startTimestamp {
+					continue
+				}
+
+				if timestamp == startTimestamp {
+					if sequence == startSequence {
+						startIndex = i + 1
+						break
+					}
+				}
+
+				if timestamp > startTimestamp {
+					startIndex = i
 					break
 				}
 			}
-
-			if timestamp > startTimestamp {
-				startIndex = i
-				break
-			}
 		}
-	}
 
-	arr := &dbStream{
-		value: stream.value[startIndex:],
-	}
+		arr := &dbStream{
+			value: stream.value[startIndex:],
+		}
 
-	res := &dbList{
-		value: []dbEntry{
-			&dbList{
-				value: []dbEntry{
-					&dbString{
-						value: key.value,
-					},
-					arr,
-				},
+		res.value = append(res.value, NewDbList([]dbEntry{
+			&dbString{
+				value: key.value,
 			},
-		},
+			arr,
+		}))
 	}
 
 	return res.ToResp().ToString()
