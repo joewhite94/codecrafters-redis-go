@@ -43,6 +43,8 @@ func runCmd(args []respElement) string {
 		return cmdXadd(args)
 	case "XRANGE":
 		return cmdXrange(args)
+	case "XREAD":
+		return cmdXread(args)
 	default:
 		return ""
 	}
@@ -825,4 +827,98 @@ func cmdXrange(args []respElement) string {
 	arr.value = arr.value[startIndex:stopIndex]
 
 	return arr.ToString()
+}
+
+func cmdXread(args []respElement) string {
+	key, ok := args[2].(*respBulkString)
+	if !ok {
+		res := &respError{
+			value: "ERR Unable to convert XREAD key to string",
+		}
+		return res.ToString()
+	}
+
+	val, ok := db.Load(key.value)
+	if !ok {
+		res := &respArray{
+			value: []respElement{},
+		}
+		return res.ToString()
+	}
+
+	stream, ok := val.(*dbStream)
+	if !ok {
+		res := &respError{
+			value: fmt.Sprintf("ERR Value at %s is not stream", key.value),
+		}
+		return res.ToString()
+	}
+
+	start, ok := args[3].(*respBulkString)
+	if !ok {
+		res := &respError{
+			value: "ERR Unable to convert XREAD start to string",
+		}
+		return res.ToString()
+	}
+
+	var startIndex = 0
+	if start.value != "-" {
+		startId := &dbStreamEntryId{
+			value: start.value,
+		}
+
+		startTimestamp, startSequence, err := startId.GetTimestampAndSequence()
+		if err != nil {
+			res := &respError{
+				value: "ERR Unable to convert XRANGE start to ID format",
+			}
+			return res.ToString()
+		}
+
+		for i, entry := range stream.value {
+			timestamp, sequence, err := entry.id.GetTimestampAndSequence()
+			if err != nil {
+				res := &respError{
+					value: "ERR Unable to parse stream entry id",
+				}
+				return res.ToString()
+			}
+
+			if timestamp < startTimestamp {
+				continue
+			}
+
+			if timestamp == startTimestamp {
+				if sequence == startSequence {
+					startIndex = i + 1
+					break
+				}
+			}
+
+			if timestamp > startTimestamp {
+				startIndex = i
+				break
+			}
+		}
+	}
+
+	arr := &dbStream{
+		value: stream.value[startIndex:],
+	}
+
+	res := &dbList{
+		value: []dbEntry{
+			&dbList{
+				value: []dbEntry{
+					&dbString{
+						value: key.value,
+					},
+					arr,
+				},
+			},
+		},
+	}
+
+	return res.ToResp().ToString()
 }
