@@ -116,7 +116,7 @@ func cmdEcho(args []string) string {
 	return res.ToString()
 }
 
-func cmdExec(rc redisConn) string {
+func cmdExec(rc *redisConn) string {
 	if !rc.multi {
 		res := &respError{
 			value: "ERR EXEC without MULTI",
@@ -367,7 +367,7 @@ func cmdLrange(args []string) string {
 	return res.ToString()
 }
 
-func cmdMulti(rc redisConn) string {
+func cmdMulti(rc *redisConn) string {
 	rc.multi = true
 	res := &respSimpleString{
 		value: "OK",
