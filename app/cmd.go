@@ -17,6 +17,8 @@ func runCmd(args []string) string {
 		return cmdEcho(args)
 	case "GET":
 		return cmdGet(args)
+	case "INCR":
+		return cmdIncr(args)
 	case "LLEN":
 		return cmdLlen(args)
 	case "LPOP":
@@ -126,6 +128,40 @@ func cmdGet(args []string) string {
 	return res.ToString()
 }
 
+func cmdIncr(args []string) string {
+	key := args[1]
+
+	val, ok := db.Load(key)
+	if !ok {
+		val = NewDbString("0")
+	}
+
+	str, ok := val.(*dbString)
+	if !ok {
+		res := &respError{
+			value: fmt.Sprintf("ERR Value at key %s is not incrementable", key),
+		}
+		return res.ToString()
+	}
+
+	i, err := strconv.Atoi(str.value)
+	if err != nil {
+		res := &respError{
+			value: fmt.Sprintf("ERR Value at key %s is not incrementable", key),
+		}
+		return res.ToString()
+	}
+
+	i++
+	db.Store(key, NewDbString(strconv.Itoa(i)))
+
+	res := &respInteger{
+		value: i,
+	}
+
+	return res.ToString()
+}
+
 func cmdLlen(args []string) string {
 	key := args[1]
 
@@ -137,7 +173,7 @@ func cmdLlen(args []string) string {
 	arr, ok := val.(*dbList)
 	if !ok {
 		res := &respError{
-			value: fmt.Sprintf("Value at key %s is not list for LLEN", key),
+			value: fmt.Sprintf("ERR Value at key %s is not list for LLEN", key),
 		}
 		return res.ToString()
 	}
