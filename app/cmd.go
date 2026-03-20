@@ -9,7 +9,7 @@ import (
 )
 
 func cmd(rc *redisConn, args []string) string {
-	if rc.multi {
+	if rc.multi && args[0] != "EXEC" {
 		queueCmd(rc, args)
 		res := &respSimpleString{
 			value: "QUEUED",
