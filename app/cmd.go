@@ -8,15 +8,9 @@ import (
 	"time"
 )
 
-func runCmd(args []respElement) string {
-	cmd, ok := args[0].(*respBulkString)
-	if !ok {
-		res := &respError{
-			value: "ERR Unable to convert command arg to bulk string",
-		}
-		return res.ToString()
-	}
-	switch cmd.value {
+func runCmd(args []string) string {
+	cmd := args[0]
+	switch cmd {
 	case "BLPOP":
 		return cmdBlpop(args)
 	case "ECHO":
@@ -50,26 +44,14 @@ func runCmd(args []respElement) string {
 	}
 }
 
-func cmdBlpop(args []respElement) string {
-	key, ok := args[1].(*respBulkString)
-	if !ok {
-		res := &respError{
-			value: "ERR Unable to convert BLPOP key to string",
-		}
-		return res.ToString()
-	}
+func cmdBlpop(args []string) string {
+	key := args[1]
 
 	var deadline time.Time
 	var timeoutDuration time.Duration
 	if len(args) > 2 {
-		timeout, ok := args[2].(*respBulkString)
-		if !ok {
-			res := &respError{
-				value: "ERR Unable to convert BLPOP timeout to string",
-			}
-			return res.ToString()
-		}
-		timeFloat, err := strconv.ParseFloat(timeout.value, 64)
+		timeout := args[2]
+		timeFloat, err := strconv.ParseFloat(timeout, 64)
 		if err != nil {
 			res := &respError{
 				value: "ERR Unable to convert BLPOP timeout to float",
@@ -80,10 +62,10 @@ func cmdBlpop(args []respElement) string {
 		deadline = time.Now().Add(timeoutDuration)
 	}
 
-	entry, ok := db.Load(key.value)
+	entry, ok := db.Load(key)
 	if !ok {
 		entry = NewDbList([]dbEntry{})
-		db.Store(key.value, entry)
+		db.Store(key, entry)
 	}
 
 	entry.Lock()
@@ -100,40 +82,36 @@ func cmdBlpop(args []respElement) string {
 		list, ok := entry.(*dbList)
 		if !ok {
 			res := &respError{
-				value: fmt.Sprintf("ERR Value at key %s is not list for BLPOP", key.value),
+				value: fmt.Sprintf("ERR Value at key %s is not list for BLPOP", key),
 			}
 			return res.ToString()
 		}
 		if len(list.value) > 0 {
 			result = &respArray{
 				value: []respElement{
-					args[1],
+					&respBulkString{
+						value: args[1],
+					},
 					list.value[0].ToResp(),
 				},
 			}
 			list.value = list.value[1:]
-			db.Store(key.value, list)
+			db.Store(key, list)
 		}
 	}
 
 	return result.ToString()
 }
 
-func cmdEcho(args []respElement) string {
-	return args[1].ToString()
+func cmdEcho(args []string) string {
+	return args[1]
 }
 
-func cmdGet(args []respElement) string {
-	key, ok := args[1].(*respBulkString)
-	if !ok {
-		res := &respError{
-			value: "ERR Unable to convert GET key to string",
-		}
-		return res.ToString()
-	}
+func cmdGet(args []string) string {
+	key := args[1]
 
 	var res respElement
-	val, ok := db.Load(key.value)
+	val, ok := db.Load(key)
 	if ok {
 		res = val.ToResp()
 	} else {
@@ -145,16 +123,10 @@ func cmdGet(args []respElement) string {
 	return res.ToString()
 }
 
-func cmdLlen(args []respElement) string {
-	key, ok := args[1].(*respBulkString)
-	if !ok {
-		res := &respError{
-			value: "ERR Unable to convert LLEN key to string",
-		}
-		return res.ToString()
-	}
+func cmdLlen(args []string) string {
+	key := args[1]
 
-	val, ok := db.Load(key.value)
+	val, ok := db.Load(key)
 	if !ok {
 		val = NewDbList([]dbEntry{})
 	}
@@ -162,7 +134,7 @@ func cmdLlen(args []respElement) string {
 	arr, ok := val.(*dbList)
 	if !ok {
 		res := &respError{
-			value: fmt.Sprintf("Value at key %s is not list for LLEN", key.value),
+			value: fmt.Sprintf("Value at key %s is not list for LLEN", key),
 		}
 		return res.ToString()
 	}
@@ -174,26 +146,14 @@ func cmdLlen(args []respElement) string {
 	return res.ToString()
 }
 
-func cmdLpop(args []respElement) string {
-	key, ok := args[1].(*respBulkString)
-	if !ok {
-		res := &respError{
-			value: "Unable to convert LPOP key to string",
-		}
-		return res.ToString()
-	}
+func cmdLpop(args []string) string {
+	key := args[1]
 
 	var count int = 1
 	var err error
 	if len(args) > 2 {
-		countStr, ok := args[2].(*respBulkString)
-		if !ok {
-			res := &respError{
-				value: "Unable to convert LPOP count to string",
-			}
-			return res.ToString()
-		}
-		count, err = strconv.Atoi(countStr.value)
+		countStr := args[2]
+		count, err = strconv.Atoi(countStr)
 		if err != nil {
 			res := &respError{
 				value: "Unable to convert LPOP count to int",
@@ -202,7 +162,7 @@ func cmdLpop(args []respElement) string {
 		}
 	}
 
-	val, ok := db.Load(key.value)
+	val, ok := db.Load(key)
 	if !ok {
 		val = NewDbList([]dbEntry{})
 	}
@@ -210,7 +170,7 @@ func cmdLpop(args []respElement) string {
 	list, ok := val.(*dbList)
 	if !ok {
 		res := &respError{
-			value: fmt.Sprintf("Value at key %s is not list for LPOP", key.value),
+			value: fmt.Sprintf("Value at key %s is not list for LPOP", key),
 		}
 		return res.ToString()
 	}
@@ -233,22 +193,16 @@ func cmdLpop(args []respElement) string {
 			result = list.value[0].ToResp()
 		}
 		list.value = list.value[count:]
-		db.Store(key.value, list)
+		db.Store(key, list)
 	}
 
 	return result.ToString()
 }
 
-func cmdLpush(args []respElement) string {
-	key, ok := args[1].(*respBulkString)
-	if !ok {
-		res := &respError{
-			value: "Unable to convert LPUSH key to string",
-		}
-		return res.ToString()
-	}
+func cmdLpush(args []string) string {
+	key := args[1]
 
-	val, ok := db.Load(key.value)
+	val, ok := db.Load(key)
 	if !ok {
 		val = NewDbList([]dbEntry{})
 	}
@@ -256,26 +210,21 @@ func cmdLpush(args []respElement) string {
 	list, ok := val.(*dbList)
 	if !ok {
 		res := &respError{
-			value: fmt.Sprintf("Value at key %s is not list for LPUSH", key.value),
+			value: fmt.Sprintf("Value at key %s is not list for LPUSH", key),
 		}
 		return res.ToString()
 	}
 
 	var prepend []dbEntry
 	for _, a := range args[2:] {
-		e, err := a.ToDbEntry()
-		if err != nil {
-			res := &respError{
-				value: "ERR" + err.Error(),
-			}
-			return res.ToString()
-		}
-		prepend = append(prepend, e)
+		prepend = append(prepend, &dbString{
+			value: a,
+		})
 	}
 	slices.Reverse(prepend)
 
 	list.value = append(prepend, list.value...)
-	db.Store(key.value, list)
+	db.Store(key, list)
 
 	res := &respInteger{
 		value: len(list.value),
@@ -284,7 +233,7 @@ func cmdLpush(args []respElement) string {
 	return res.ToString()
 }
 
-func cmdLrange(args []respElement) string {
+func cmdLrange(args []string) string {
 	if len(args) < 4 {
 		res := &respError{
 			value: "LRANGE requires a key, start index and stop index",
@@ -292,22 +241,10 @@ func cmdLrange(args []respElement) string {
 		return res.ToString()
 	}
 
-	key, ok := args[1].(*respBulkString)
-	if !ok {
-		res := &respError{
-			value: "Unable to convert LRANGE key to string",
-		}
-		return res.ToString()
-	}
+	key := args[1]
 
-	startStr, ok := args[2].(*respBulkString)
-	if !ok {
-		res := &respError{
-			value: "Unable to convert LRANGE start index to string",
-		}
-		return res.ToString()
-	}
-	start, err := strconv.Atoi(startStr.value)
+	startStr := args[2]
+	start, err := strconv.Atoi(startStr)
 	if err != nil {
 		res := &respError{
 			value: "Unable to convert LRANGE start index to int",
@@ -315,14 +252,8 @@ func cmdLrange(args []respElement) string {
 		return res.ToString()
 	}
 
-	stopStr, ok := args[3].(*respBulkString)
-	if !ok {
-		res := &respError{
-			value: "Unable to convert LRANGE stop index to string",
-		}
-		return res.ToString()
-	}
-	stop, err := strconv.Atoi(stopStr.value)
+	stopStr := args[3]
+	stop, err := strconv.Atoi(stopStr)
 	if err != nil {
 		res := &respError{
 			value: "Unable to convert LRANGE stop index to int",
@@ -330,7 +261,7 @@ func cmdLrange(args []respElement) string {
 		return res.ToString()
 	}
 
-	val, ok := db.Load(key.value)
+	val, ok := db.Load(key)
 	if !ok {
 		val = NewDbList([]dbEntry{})
 	}
@@ -338,7 +269,7 @@ func cmdLrange(args []respElement) string {
 	list, ok := val.(*dbList)
 	if !ok {
 		res := &respError{
-			value: fmt.Sprintf("Unable to convert value at %s to list", key.value),
+			value: fmt.Sprintf("Unable to convert value at %s to list", key),
 		}
 		return res.ToString()
 	}
@@ -390,43 +321,32 @@ func cmdPing() string {
 	return res.ToString()
 }
 
-func cmdRpush(args []respElement) string {
-	key, ok := args[1].(*respBulkString)
-	if !ok {
-		res := &respError{
-			value: "Unable to convert RPUSH key to string",
-		}
-		return res.ToString()
-	}
+func cmdRpush(args []string) string {
+	key := args[1]
 
-	val, ok := db.Load(key.value)
+	val, ok := db.Load(key)
 	if !ok {
 		val = NewDbList([]dbEntry{})
-		db.Store(key.value, val)
+		db.Store(key, val)
 	}
 
 	list, ok := val.(*dbList)
 	if !ok {
 		res := &respError{
-			value: fmt.Sprintf("Value at key %s is not list for RPUSH", key.value),
+			value: fmt.Sprintf("Value at key %s is not list for RPUSH", key),
 		}
 		return res.ToString()
 	}
 
 	var toAppend []dbEntry
 	for _, a := range args[2:] {
-		e, err := a.ToDbEntry()
-		if err != nil {
-			res := &respError{
-				value: "ERR" + err.Error(),
-			}
-			return res.ToString()
-		}
-		toAppend = append(toAppend, e)
+		toAppend = append(toAppend, &dbString{
+			value: a,
+		})
 	}
 
 	list.value = append(list.value, toAppend...)
-	db.Store(key.value, list)
+	db.Store(key, list)
 
 	res := &respInteger{
 		value: len(list.value),
@@ -435,43 +355,19 @@ func cmdRpush(args []respElement) string {
 	return res.ToString()
 }
 
-func cmdSet(args []respElement) string {
-	key, ok := args[1].(*respBulkString)
-	if !ok {
-		res := &respError{
-			value: "ERR Unable to convert SET key to string",
-		}
-		return res.ToString()
-	}
+func cmdSet(args []string) string {
+	key := args[1]
 
-	e, err := args[2].ToDbEntry()
-	if err != nil {
-		res := &respError{
-			value: "ERR" + err.Error(),
-		}
-		return res.ToString()
-	}
-
-	db.Store(key.value, e)
+	db.Store(key, &dbString{
+		value: args[2],
+	})
 
 	if len(args) > 3 {
-		expiryCmd, ok := args[3].(*respBulkString)
-		if !ok {
-			res := &respError{
-				value: "ERR Unable to convert SET expiry command to string",
-			}
-			return res.ToString()
-		}
-		switch expiryCmd.value {
+		expiryCmd := args[3]
+		switch expiryCmd {
 		case "EX":
-			expiryStr, ok := args[4].(*respBulkString)
-			if !ok {
-				res := &respError{
-					value: "ERR Unable to convert SET expiry to string",
-				}
-				return res.ToString()
-			}
-			duration, err := time.ParseDuration(expiryStr.value + "s")
+			expiryStr := args[4]
+			duration, err := time.ParseDuration(expiryStr + "s")
 			if err != nil {
 				res := &respError{
 					value: fmt.Sprintf("ERR Unable to parse duration: %s", err.Error()),
@@ -479,17 +375,11 @@ func cmdSet(args []respElement) string {
 				return res.ToString()
 			}
 			time.AfterFunc(duration, func() {
-				db.m.Delete(key.value)
+				db.m.Delete(key)
 			})
 		case "PX":
-			expiryStr, ok := args[4].(*respBulkString)
-			if !ok {
-				res := &respError{
-					value: "ERR Unable to convert SET expiry to string",
-				}
-				return res.ToString()
-			}
-			duration, err := time.ParseDuration(expiryStr.value + "ms")
+			expiryStr := args[4]
+			duration, err := time.ParseDuration(expiryStr + "ms")
 			if err != nil {
 				res := &respError{
 					value: fmt.Sprintf("ERR Unable to parse duration: %s", err.Error()),
@@ -497,7 +387,7 @@ func cmdSet(args []respElement) string {
 				return res.ToString()
 			}
 			time.AfterFunc(duration, func() {
-				db.m.Delete(key.value)
+				db.m.Delete(key)
 			})
 		default:
 		}
@@ -510,16 +400,10 @@ func cmdSet(args []respElement) string {
 	return res.ToString()
 }
 
-func cmdType(args []respElement) string {
-	key, ok := args[1].(*respBulkString)
-	if !ok {
-		res := &respError{
-			value: "ERR Unable to convert TYPE key to string",
-		}
-		return res.ToString()
-	}
+func cmdType(args []string) string {
+	key := args[1]
 
-	val, ok := db.Load(key.value)
+	val, ok := db.Load(key)
 	if !ok {
 		res := &respSimpleString{
 			value: "none",
@@ -533,36 +417,24 @@ func cmdType(args []respElement) string {
 	return res.ToString()
 }
 
-func cmdXadd(args []respElement) string {
-	key, ok := args[1].(*respBulkString)
-	if !ok {
-		res := &respError{
-			value: "ERR Unable to convert XADD key to string",
-		}
-		return res.ToString()
-	}
+func cmdXadd(args []string) string {
+	key := args[1]
 
-	val, ok := db.Load(key.value)
+	val, ok := db.Load(key)
 	if !ok {
 		val = NewDbStream([]dbStreamEntry{})
-		db.Store(key.value, val)
+		db.Store(key, val)
 	}
 
 	stream, ok := val.(*dbStream)
 	if !ok {
 		res := &respError{
-			value: fmt.Sprintf("ERR Value at key %s is not stream for XADD", key.value),
+			value: fmt.Sprintf("ERR Value at key %s is not stream for XADD", key),
 		}
 		return res.ToString()
 	}
 
-	id, ok := args[2].(*respBulkString)
-	if !ok {
-		res := &respError{
-			value: "ERR Unable to convert XADD id to string",
-		}
-		return res.ToString()
-	}
+	id := args[2]
 
 	var prevEntry dbStreamEntry
 	var prevTimestamp, prevSequence int
@@ -572,7 +444,7 @@ func cmdXadd(args []respElement) string {
 		prevTimestamp, prevSequence, err = prevEntry.id.GetTimestampAndSequence()
 		if err != nil {
 			res := &respError{
-				value: fmt.Sprintf("ERR The ID in stream %s is an invalid format", key.value),
+				value: fmt.Sprintf("ERR The ID in stream %s is an invalid format", key),
 			}
 			return res.ToString()
 		}
@@ -580,7 +452,7 @@ func cmdXadd(args []respElement) string {
 
 	var timestamp int
 	var sequence int
-	switch id.value {
+	switch id {
 	case "0-0":
 		res := &respError{
 			value: "ERR The ID specified in XADD must be greater than 0-0",
@@ -593,9 +465,9 @@ func cmdXadd(args []respElement) string {
 			sequence = prevSequence + 1
 		}
 
-		id.value = fmt.Sprintf("%d-%d", timestamp, sequence)
+		id = fmt.Sprintf("%d-%d", timestamp, sequence)
 	default:
-		splitId := strings.Split(id.value, "-")
+		splitId := strings.Split(id, "-")
 
 		if len(splitId) != 2 {
 			res := &respError{
@@ -628,12 +500,12 @@ func cmdXadd(args []respElement) string {
 				return res.ToString()
 			}
 		}
-		id.value = fmt.Sprintf("%d-%d", timestamp, sequence)
+		id = fmt.Sprintf("%d-%d", timestamp, sequence)
 	}
 
 	entry := dbStreamEntry{
 		id: dbStreamEntryId{
-			value: id.value,
+			value: id,
 		},
 		values: map[string]string{},
 	}
@@ -656,25 +528,13 @@ func cmdXadd(args []respElement) string {
 
 	// TODO: guard against potential out of range panic caused by supplying insufficient params
 	for i := 3; i < len(args); i += 2 {
-		k, ok := args[i].(*respBulkString)
-		if !ok {
-			res := &respError{
-				value: "ERR Unable to convert XADD map key to string",
-			}
-			return res.ToString()
-		}
-		v, ok := args[i+1].(*respBulkString)
-		if !ok {
-			res := &respError{
-				value: "ERR Unable to convert XADD map key to string",
-			}
-			return res.ToString()
-		}
-		entry.values[k.value] = v.value
+		k := args[i]
+		v := args[i+1]
+		entry.values[k] = v
 	}
 
 	stream.value = append(stream.value, entry)
-	db.Store(key.value, stream)
+	db.Store(key, stream)
 
 	res := &respBulkString{
 		value: entry.id.value,
@@ -683,7 +543,7 @@ func cmdXadd(args []respElement) string {
 	return res.ToString()
 }
 
-func cmdXrange(args []respElement) string {
+func cmdXrange(args []string) string {
 	if len(args) < 4 {
 		res := &respError{
 			value: "ERR XRANGE requires key, start, and stop arguments",
@@ -691,15 +551,9 @@ func cmdXrange(args []respElement) string {
 		return res.ToString()
 	}
 
-	key, ok := args[1].(*respBulkString)
-	if !ok {
-		res := &respError{
-			value: "ERR Unable to convert XRANGE key to string",
-		}
-		return res.ToString()
-	}
+	key := args[1]
 
-	val, ok := db.Load(key.value)
+	val, ok := db.Load(key)
 	if !ok {
 		res := &respArray{
 			value: []respElement{},
@@ -710,23 +564,17 @@ func cmdXrange(args []respElement) string {
 	stream, ok := val.(*dbStream)
 	if !ok {
 		res := &respError{
-			value: fmt.Sprintf("ERR Value at %s is not stream", key.value),
+			value: fmt.Sprintf("ERR Value at %s is not stream", key),
 		}
 		return res.ToString()
 	}
 
-	start, ok := args[2].(*respBulkString)
-	if !ok {
-		res := &respError{
-			value: "ERR Unable to convert XRANGE start to string",
-		}
-		return res.ToString()
-	}
+	start := args[2]
 
 	var startIndex = 0
-	if start.value != "-" {
+	if start != "-" {
 		startId := &dbStreamEntryId{
-			value: start.value,
+			value: start,
 		}
 
 		startTimestamp, startSequence, err := startId.GetTimestampAndSequence()
@@ -764,18 +612,12 @@ func cmdXrange(args []respElement) string {
 		}
 	}
 
-	stop, ok := args[3].(*respBulkString)
-	if !ok {
-		res := &respError{
-			value: "ERR Unable to convert XADD start to string",
-		}
-		return res.ToString()
-	}
+	stop := args[3]
 
 	var stopIndex = len(stream.value)
-	if stop.value != "+" {
+	if stop != "+" {
 		stopId := &dbStreamEntryId{
-			value: stop.value,
+			value: stop,
 		}
 
 		stopTimestamp, stopSequence, err := stopId.GetTimestampAndSequence()
@@ -819,7 +661,7 @@ func cmdXrange(args []respElement) string {
 	arr, ok := r.(*respArray)
 	if !ok {
 		res := &respError{
-			value: fmt.Sprintf("ERR Value at %s is not stream", key.value),
+			value: fmt.Sprintf("ERR Value at %s is not stream", key),
 		}
 		return res.ToString()
 	}
@@ -829,26 +671,14 @@ func cmdXrange(args []respElement) string {
 	return arr.ToString()
 }
 
-func cmdXread(args []respElement) string {
-	arg, ok := args[1].(*respBulkString)
-	if !ok {
-		res := &respError{
-			value: "ERR XRANGE arg is not bulk string",
-		}
-		return res.ToString()
-	}
+func cmdXread(args []string) string {
+	arg := args[1]
 
 	var deadline time.Time
 	var timeoutDuration time.Duration
-	if strings.ToLower(arg.value) == "block" {
-		timeout, ok := args[2].(*respBulkString)
-		if !ok {
-			res := &respError{
-				value: "ERR Unable to convert XREAD timeout to string",
-			}
-			return res.ToString()
-		}
-		timeFloat, err := strconv.ParseFloat(timeout.value, 64)
+	if strings.ToLower(arg) == "block" {
+		timeout := args[2]
+		timeFloat, err := strconv.ParseFloat(timeout, 64)
 		if err != nil {
 			res := &respError{
 				value: "ERR Unable to convert XREAD timeout to float",
@@ -859,9 +689,8 @@ func cmdXread(args []respElement) string {
 		deadline = time.Now().Add(timeoutDuration)
 	}
 
-	streamsIndex := slices.IndexFunc(args, func(e respElement) bool {
-		arg := e.(*respBulkString)
-		return strings.ToLower(arg.value) == "streams"
+	streamsIndex := slices.IndexFunc(args, func(e string) bool {
+		return strings.ToLower(e) == "streams"
 	})
 	keysAndStarts := args[streamsIndex+1:]
 
@@ -880,15 +709,9 @@ func cmdXread(args []respElement) string {
 	var res = NewDbList([]dbEntry{})
 
 	for i := 0; i < halfway; i++ {
-		key, ok := keys[i].(*respBulkString)
-		if !ok {
-			res := &respError{
-				value: "ERR Unable to convert XREAD key to string",
-			}
-			return res.ToString()
-		}
+		key := keys[i]
 
-		val, ok := db.Load(key.value)
+		val, ok := db.Load(key)
 		if !ok {
 			res := &respArray{
 				value: []respElement{},
@@ -899,23 +722,17 @@ func cmdXread(args []respElement) string {
 		stream, ok := val.(*dbStream)
 		if !ok {
 			res := &respError{
-				value: fmt.Sprintf("ERR Value at %s is not stream", key.value),
+				value: fmt.Sprintf("ERR Value at %s is not stream", key),
 			}
 			return res.ToString()
 		}
 
-		start, ok := starts[i].(*respBulkString)
-		if !ok {
-			res := &respError{
-				value: "ERR Unable to convert XREAD start to string",
-			}
-			return res.ToString()
-		}
+		start := starts[i]
 
 		var startIndex = 0
-		if start.value != "-" {
+		if start != "-" {
 			startId := &dbStreamEntryId{
-				value: start.value,
+				value: start,
 			}
 
 			startTimestamp, startSequence, err := startId.GetTimestampAndSequence()
@@ -965,7 +782,7 @@ func cmdXread(args []respElement) string {
 
 		res.value = append(res.value, NewDbList([]dbEntry{
 			&dbString{
-				value: key.value,
+				value: key,
 			},
 			arr,
 		}))

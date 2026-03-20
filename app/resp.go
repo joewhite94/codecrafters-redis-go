@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 )
@@ -14,6 +13,7 @@ type respElement interface {
 	ToString() string
 }
 
+// other types which may be returned to clients
 type respArray struct {
 	value []respElement
 }
@@ -106,116 +106,25 @@ func (s *respSimpleString) ToString() string {
 	return fmt.Sprintf("+%s\r\n", s.value)
 }
 
-func readResp(elems string, index int) (respElement, int, error) {
-	respType := string(elems[index])
-	elem := strings.TrimPrefix(elems[index:], respType)
-	index += 1
-
-	switch respType {
-	case "+":
-		// simple string: +STR\r\n
-		simpleStr, _, _ := strings.Cut(elem, "\r\n")
-		index += len(simpleStr) + 2
-		return &respSimpleString{
-			value: simpleStr,
-		}, index, nil
-	case ":":
-		// integer: :[<+|->]<value>\r\n
-		intStr, _, _ := strings.Cut(elem, "\r\n")
-		index += len(intStr) + 2
-		value, err := strconv.Atoi(intStr)
-		if err != nil {
-			return nil, 0, err
-		}
-		return &respInteger{
-			value: value,
-		}, index, nil
-	case "$":
-		// bulk string: $<length>\r\n<data>\r\n
-		lenStr, _, _ := strings.Cut(elem, "\r\n")
-		stringStart := len(lenStr) + 2
-		length, err := strconv.Atoi(lenStr)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error parsing resp input: %v", err)
-			break
-		}
-		if length == -1 {
-			// null bulk string
-			index += stringStart + 2
-			return &respBulkString{
-				value: "",
-			}, index, nil
-		} else {
-			bulkStr := elem[stringStart : stringStart+length]
-			index += stringStart + len(bulkStr) + 2
-			return &respBulkString{
-				value: bulkStr,
-			}, index, nil
-		}
-	case "*":
-		// array: *<number-of-elements>\r\n<element-1>...<element-n>
-		// TODO: implement null array
-		firstElem, _, _ := strings.Cut(elem, "\r\n")
-		elemCount, err := strconv.Atoi(firstElem)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error parsing resp input: %v", err)
-			break
-		}
-		index += len(firstElem) + 2
-
-		array := make([]respElement, elemCount)
-		var valuesAdded int
-		for valuesAdded < len(array) {
-			var subElem respElement
-			subElem, index, err = readResp(elems, index)
-			if err != nil {
-				break
-			}
-			array[valuesAdded] = subElem
-			valuesAdded++
-		}
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error parsing resp input: %v", err)
-			break
-		}
-		return &respArray{
-			value: array,
-		}, index, nil
-	case "_":
-		// null
-		return nil, 0, fmt.Errorf("Unimplemented")
-	case "#":
-		// boolean
-		return nil, 0, fmt.Errorf("Unimplemented")
-	case ",":
-		// double
-		return nil, 0, fmt.Errorf("Unimplemented")
-	case "(":
-		// bignum
-		return nil, 0, fmt.Errorf("Unimplemented")
-	case "!":
-		// bulk error
-		return nil, 0, fmt.Errorf("Unimplemented")
-	case "=":
-		// verbatim string
-		return nil, 0, fmt.Errorf("Unimplemented")
-	case "%":
-		// map
-		return nil, 0, fmt.Errorf("Unimplemented")
-	case "|":
-		// attribute
-		return nil, 0, fmt.Errorf("Unimplemented")
-	case "~":
-		// set
-		return nil, 0, fmt.Errorf("Unimplemented")
-	case ">":
-		// push
-		return nil, 0, fmt.Errorf("Unimplemented")
-	case "-":
-		// error
-		return nil, 0, fmt.Errorf("Received error in input")
-	default:
-		// unknown
+func readRespInput(elems string) ([]string, error) {
+	if string(elems[0]) != "*" {
+		return nil, fmt.Errorf("Client input must be an array of bulk strings")
 	}
-	return nil, 0, fmt.Errorf("Unknown RESP type %s", respType)
+
+	// array: *<number-of-elements>\r\n<element-1>...<element-n>
+	countStr, _, _ := strings.Cut(elems[1:], "\r\n")
+	elemCount, err := strconv.Atoi(countStr)
+	if err != nil {
+		return nil, fmt.Errorf("Error parsing resp input: %v", err)
+	}
+
+	args := make([]string, elemCount)
+
+	bulkStrings := strings.Split(elems, "\r\n$")[1:]
+
+	for i, s := range bulkStrings {
+		_, bulkStr, _ := strings.Cut(s, "\r\n")
+		args[i] = bulkStr
+	}
+	return args, nil
 }

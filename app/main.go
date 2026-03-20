@@ -18,20 +18,15 @@ func handleConnection(conn net.Conn) {
 			return
 		}
 
-		resp, _, err := readResp(string(buf), 0)
+		args, err := readRespInput(string(buf))
 		if err != nil {
 			fmt.Fprintf(os.Stderr, err.Error())
 		}
 
-		if arr, ok := resp.(*respArray); ok {
-			res := runCmd(arr.value)
-			_, err = conn.Write([]byte(res))
-			if err != nil {
-				fmt.Fprintf(os.Stderr, err.Error())
-				return
-			}
-		} else {
-			fmt.Fprintf(os.Stderr, "Unable to parse RESP input")
+		res := runCmd(args)
+		_, err = conn.Write([]byte(res))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, err.Error())
 			return
 		}
 	}
