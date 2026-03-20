@@ -27,6 +27,8 @@ func runCmd(args []string) string {
 		return cmdLpush(args)
 	case "LRANGE":
 		return cmdLrange(args)
+	case "MULTI":
+		return cmdMulti(args)
 	case "PING":
 		return cmdPing()
 	case "RPUSH":
@@ -348,6 +350,13 @@ func cmdLrange(args []string) string {
 		res.value[i] = li.ToResp()
 	}
 
+	return res.ToString()
+}
+
+func cmdMulti() string {
+	res := &respSimpleString{
+		value: "OK",
+	}
 	return res.ToString()
 }
 
