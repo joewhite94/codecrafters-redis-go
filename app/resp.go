@@ -115,12 +115,25 @@ func readRespInput(elems string) ([]string, error) {
 
 	args := make([]string, elemCount)
 
-	bulkStrings := strings.Split(elems, "$")[1:]
-
-	for i, s := range bulkStrings {
-		_, bulkStr, _ := strings.Cut(s, "\r\n")
-		bulkStr, _, _ = strings.Cut(bulkStr, "\r\n")
-		args[i] = bulkStr
+	var i int = len(countStr) + 3
+	var j int = 0
+	for j < len(args) {
+		if string(elems[i]) == "$" {
+			// start new bulk string
+			length, bulkStr, _ := strings.Cut(elems[i+1:], "\r\n")
+			stringLen, err := strconv.Atoi(length)
+			if err != nil {
+				return nil, fmt.Errorf("Error parsing resp input: %v", err)
+			}
+			bulkStr = bulkStr[:stringLen]
+			args[j] = bulkStr
+			j++
+			// $length\r\nstring\r\n
+			i += len(length) + stringLen + 5
+		} else {
+			i++
+		}
 	}
+
 	return args, nil
 }

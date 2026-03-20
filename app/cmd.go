@@ -727,7 +727,9 @@ func cmdXread(args []string) string {
 		start := starts[i]
 
 		var startIndex = 0
-		if start != "-" {
+		if start == "$" {
+			startIndex = len(stream.value)
+		} else {
 			startId := &dbStreamEntryId{
 				value: start,
 			}
@@ -774,7 +776,9 @@ func cmdXread(args []string) string {
 				// TODO: remove hard coded null array when parser supports it
 				return "*-1\r\n"
 			}
-			arr.value = stream.value[startIndex:]
+			if len(stream.value) > startIndex {
+				arr.value = stream.value[startIndex:]
+			}
 		}
 
 		res.value = append(res.value, NewDbList([]dbEntry{
