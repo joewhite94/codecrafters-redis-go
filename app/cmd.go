@@ -104,7 +104,10 @@ func cmdBlpop(args []string) string {
 }
 
 func cmdEcho(args []string) string {
-	return args[1]
+	res := &respBulkString{
+		value: args[1],
+	}
+	return res.ToString()
 }
 
 func cmdGet(args []string) string {
@@ -217,9 +220,7 @@ func cmdLpush(args []string) string {
 
 	var prepend []dbEntry
 	for _, a := range args[2:] {
-		prepend = append(prepend, &dbString{
-			value: a,
-		})
+		prepend = append(prepend, NewDbString(a))
 	}
 	slices.Reverse(prepend)
 
@@ -340,9 +341,7 @@ func cmdRpush(args []string) string {
 
 	var toAppend []dbEntry
 	for _, a := range args[2:] {
-		toAppend = append(toAppend, &dbString{
-			value: a,
-		})
+		toAppend = append(toAppend, NewDbString(a))
 	}
 
 	list.value = append(list.value, toAppend...)
@@ -358,9 +357,7 @@ func cmdRpush(args []string) string {
 func cmdSet(args []string) string {
 	key := args[1]
 
-	db.Store(key, &dbString{
-		value: args[2],
-	})
+	db.Store(key, NewDbString(args[2]))
 
 	if len(args) > 3 {
 		expiryCmd := args[3]
@@ -781,9 +778,7 @@ func cmdXread(args []string) string {
 		}
 
 		res.value = append(res.value, NewDbList([]dbEntry{
-			&dbString{
-				value: key,
-			},
+			NewDbString(key),
 			arr,
 		}))
 	}

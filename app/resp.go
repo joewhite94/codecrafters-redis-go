@@ -27,12 +27,7 @@ func (a *respArray) ToDbEntry() (dbEntry, error) {
 		}
 		res = append(res, subEntry)
 	}
-	return &dbList{
-		dbBaseEntry: dbBaseEntry{
-			dbType: "list",
-		},
-		value: res,
-	}, nil
+	return NewDbList(res), nil
 }
 
 func (a *respArray) ToString() string {
@@ -120,10 +115,11 @@ func readRespInput(elems string) ([]string, error) {
 
 	args := make([]string, elemCount)
 
-	bulkStrings := strings.Split(elems, "\r\n$")[1:]
+	bulkStrings := strings.Split(elems, "$")[1:]
 
 	for i, s := range bulkStrings {
 		_, bulkStr, _ := strings.Cut(s, "\r\n")
+		bulkStr, _, _ = strings.Cut(bulkStr, "\r\n")
 		args[i] = bulkStr
 	}
 	return args, nil
