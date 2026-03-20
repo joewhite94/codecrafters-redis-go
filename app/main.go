@@ -12,7 +12,7 @@ type redisConn struct {
 }
 
 func handleConnection(conn net.Conn) {
-	rc := &redisConn{
+	rc := redisConn{
 		conn: conn,
 	}
 
