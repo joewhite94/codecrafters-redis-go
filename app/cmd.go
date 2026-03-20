@@ -8,8 +8,10 @@ import (
 	"time"
 )
 
+var transactionalCmds = []string{"DISCARD", "EXEC"}
+
 func cmd(rc *redisConn, args []string) string {
-	if rc.multi && args[0] != "EXEC" {
+	if rc.multi && !slices.Contains(transactionalCmds, args[0]) {
 		queueCmd(rc, args)
 		res := &respSimpleString{
 			value: "QUEUED",
