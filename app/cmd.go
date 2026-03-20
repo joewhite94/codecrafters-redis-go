@@ -28,7 +28,7 @@ func runCmd(args []string) string {
 	case "LRANGE":
 		return cmdLrange(args)
 	case "MULTI":
-		return cmdMulti(args)
+		return cmdMulti()
 	case "PING":
 		return cmdPing()
 	case "RPUSH":
