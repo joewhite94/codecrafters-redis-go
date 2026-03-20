@@ -6,13 +6,22 @@ import (
 	"os"
 )
 
+type redisConn struct {
+	conn  net.Conn
+	multi bool
+}
+
 func handleConnection(conn net.Conn) {
-	defer conn.Close()
+	rc := &redisConn{
+		conn: conn,
+	}
+
+	defer rc.conn.Close()
 
 	for {
 		buf := make([]byte, 1024)
 
-		_, err := conn.Read(buf)
+		_, err := rc.conn.Read(buf)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, err.Error())
 			return
@@ -23,7 +32,7 @@ func handleConnection(conn net.Conn) {
 			fmt.Fprintf(os.Stderr, err.Error())
 		}
 
-		res := runCmd(args)
+		res := runCmd(rc, args)
 		_, err = conn.Write([]byte(res))
 		if err != nil {
 			fmt.Fprintf(os.Stderr, err.Error())

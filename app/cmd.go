@@ -8,13 +8,15 @@ import (
 	"time"
 )
 
-func runCmd(args []string) string {
+func runCmd(rc redisConn, args []string) string {
 	cmd := args[0]
 	switch cmd {
 	case "BLPOP":
 		return cmdBlpop(args)
 	case "ECHO":
 		return cmdEcho(args)
+	case "EXEC":
+		return cmdExec(rc)
 	case "GET":
 		return cmdGet(args)
 	case "INCR":
@@ -28,7 +30,7 @@ func runCmd(args []string) string {
 	case "LRANGE":
 		return cmdLrange(args)
 	case "MULTI":
-		return cmdMulti()
+		return cmdMulti(rc)
 	case "PING":
 		return cmdPing()
 	case "RPUSH":
@@ -110,6 +112,20 @@ func cmdBlpop(args []string) string {
 func cmdEcho(args []string) string {
 	res := &respBulkString{
 		value: args[1],
+	}
+	return res.ToString()
+}
+
+func cmdExec(rc redisConn) string {
+	if !rc.multi {
+		res := &respError{
+			value: "ERR EXEC without MULTI",
+		}
+		return res.ToString()
+	}
+	rc.multi = false
+	res := &respSimpleString{
+		value: "OK",
 	}
 	return res.ToString()
 }
@@ -353,7 +369,8 @@ func cmdLrange(args []string) string {
 	return res.ToString()
 }
 
-func cmdMulti() string {
+func cmdMulti(rc redisConn) string {
+	rc.multi = true
 	res := &respSimpleString{
 		value: "OK",
 	}
