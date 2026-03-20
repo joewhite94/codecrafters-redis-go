@@ -62,17 +62,17 @@ func cmdBlpop(args []respElement) string {
 	var deadline time.Time
 	var timeoutDuration time.Duration
 	if len(args) > 2 {
-		countStr, ok := args[2].(*respBulkString)
+		timeout, ok := args[2].(*respBulkString)
 		if !ok {
 			res := &respError{
-				value: "ERR Unable to convert BLPOP count to string",
+				value: "ERR Unable to convert BLPOP timeout to string",
 			}
 			return res.ToString()
 		}
-		timeFloat, err := strconv.ParseFloat(countStr.value, 64)
+		timeFloat, err := strconv.ParseFloat(timeout.value, 64)
 		if err != nil {
 			res := &respError{
-				value: "ERR Unable to convert BLPOP count to float",
+				value: "ERR Unable to convert BLPOP timeout to float",
 			}
 			return res.ToString()
 		}
@@ -830,9 +830,42 @@ func cmdXrange(args []respElement) string {
 }
 
 func cmdXread(args []respElement) string {
-	keysAndStarts := args[2:]
+	arg, ok := args[1].(*respBulkString)
+	if !ok {
+		res := &respError{
+			value: "ERR XRANGE arg is not bulk string",
+		}
+		return res.ToString()
+	}
 
-	if len(keysAndStarts)%2 != 0 {
+	var deadline time.Time
+	var timeoutDuration time.Duration
+	if strings.ToLower(arg.value) == "block" {
+		timeout, ok := args[2].(*respBulkString)
+		if !ok {
+			res := &respError{
+				value: "ERR Unable to convert XREAD timeout to string",
+			}
+			return res.ToString()
+		}
+		timeFloat, err := strconv.ParseFloat(timeout.value, 64)
+		if err != nil {
+			res := &respError{
+				value: "ERR Unable to convert XREAD timeout to float",
+			}
+			return res.ToString()
+		}
+		timeoutDuration = time.Millisecond * time.Duration(timeFloat)
+		deadline = time.Now().Add(timeoutDuration)
+	}
+
+	streamsIndex := slices.IndexFunc(args, func(e respElement) bool {
+		arg := e.(*respBulkString)
+		return strings.ToLower(arg.value) == "streams"
+	})
+	keysAndStarts := args[streamsIndex+1:]
+
+	if len(args)%2 != 0 {
 		res := &respError{
 			value: "ERR Insufficient arguments provided for XREAD",
 		}
@@ -920,8 +953,14 @@ func cmdXread(args []respElement) string {
 			}
 		}
 
-		arr := &dbStream{
-			value: stream.value[startIndex:],
+		arr := NewDbStream([]dbStreamEntry{})
+
+		for len(arr.value) == 0 {
+			if timeoutDuration > 0 && time.Now().After(deadline) {
+				// TODO: remove hard coded null array when parser supports it
+				return "*-1\r\n"
+			}
+			arr.value = stream.value[startIndex:]
 		}
 
 		res.value = append(res.value, NewDbList([]dbEntry{
