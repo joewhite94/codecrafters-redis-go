@@ -139,7 +139,7 @@ func cmdIncr(args []string) string {
 	str, ok := val.(*dbString)
 	if !ok {
 		res := &respError{
-			value: fmt.Sprintf("ERR Value at key %s is not incrementable", key),
+			value: "ERR value is not an integer or out of range",
 		}
 		return res.ToString()
 	}
@@ -147,7 +147,7 @@ func cmdIncr(args []string) string {
 	i, err := strconv.Atoi(str.value)
 	if err != nil {
 		res := &respError{
-			value: fmt.Sprintf("ERR Value at key %s is not incrementable", key),
+			value: "ERR value is not an integer or out of range",
 		}
 		return res.ToString()
 	}
