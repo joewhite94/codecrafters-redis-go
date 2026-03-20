@@ -41,6 +41,16 @@ func (a *respArray) ToString() string {
 	return res
 }
 
+type respNullArray struct{}
+
+func (a *respNullArray) ToDbEntry() (dbEntry, error) {
+	return nil, nil
+}
+
+func (a *respNullArray) ToString() string {
+	return "*-1\r\n"
+}
+
 type respBulkString struct {
 	value string
 }
