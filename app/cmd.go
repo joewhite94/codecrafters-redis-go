@@ -124,9 +124,7 @@ func cmdExec(rc redisConn) string {
 		return res.ToString()
 	}
 	rc.multi = false
-	res := &respSimpleString{
-		value: "OK",
-	}
+	res := &respArray{}
 	return res.ToString()
 }
 
