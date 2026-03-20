@@ -9,6 +9,7 @@ import (
 type redisConn struct {
 	conn  net.Conn
 	multi bool
+	queue [][]string
 }
 
 func handleConnection(conn net.Conn) {
@@ -32,7 +33,7 @@ func handleConnection(conn net.Conn) {
 			fmt.Fprintf(os.Stderr, err.Error())
 		}
 
-		res := runCmd(rc, args)
+		res := cmd(rc, args)
 		_, err = conn.Write([]byte(res))
 		if err != nil {
 			fmt.Fprintf(os.Stderr, err.Error())

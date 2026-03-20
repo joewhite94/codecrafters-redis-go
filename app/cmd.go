@@ -8,6 +8,22 @@ import (
 	"time"
 )
 
+func cmd(rc *redisConn, args []string) string {
+	if rc.multi {
+		queueCmd(rc, args)
+		res := &respSimpleString{
+			value: "QUEUED",
+		}
+		return res.ToString()
+	} else {
+		return runCmd(rc, args)
+	}
+}
+
+func queueCmd(rc *redisConn, args []string) {
+	rc.queue = append(rc.queue, args)
+}
+
 func runCmd(rc *redisConn, args []string) string {
 	cmd := args[0]
 	switch cmd {
