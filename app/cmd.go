@@ -133,6 +133,21 @@ func cmdEcho(args []string) respElement {
 	return res
 }
 
+func cmdDiscard(rc *redisConn) respElement {
+	if !rc.multi {
+		res := &respError{
+			value: "ERR DISCARD without MULTI",
+		}
+		return res
+	}
+	rc.multi = false
+	rc.queue = [][]string{}
+	res := &respSimpleString{
+		value: "OK",
+	}
+	return res
+}
+
 func cmdExec(rc *redisConn) respElement {
 	if !rc.multi {
 		res := &respError{
