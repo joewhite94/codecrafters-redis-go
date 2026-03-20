@@ -29,6 +29,8 @@ func runCmd(rc *redisConn, args []string) respElement {
 	switch cmd {
 	case "BLPOP":
 		return cmdBlpop(args)
+	case "DISCARD":
+		return cmdDiscard(rc)
 	case "ECHO":
 		return cmdEcho(args)
 	case "EXEC":
