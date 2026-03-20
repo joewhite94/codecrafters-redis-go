@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-func runCmd(rc redisConn, args []string) string {
+func runCmd(rc *redisConn, args []string) string {
 	cmd := args[0]
 	switch cmd {
 	case "BLPOP":
