@@ -5,13 +5,30 @@ import (
 	"net"
 	"os"
 	"slices"
-	"strconv"
 )
 
 type redisConn struct {
 	conn  net.Conn
 	multi bool
 	queue [][]string
+}
+
+func getArg(arg string) (string, error) {
+	var args []string = os.Args
+	var res string
+	var err error
+
+	if len(args) > 1 {
+		index := slices.Index(args, arg)
+		if index != -1 {
+			if len(args) < index {
+				err = fmt.Errorf("Argument %s requires a value\n", arg)
+			} else {
+				res = args[index+1]
+			}
+		}
+	}
+	return res, err
 }
 
 func handleConnection(conn net.Conn) {
@@ -45,24 +62,24 @@ func handleConnection(conn net.Conn) {
 }
 
 func main() {
-	var port string = "6379"
+	port, err := getArg("--port")
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+	if port == "" {
+		port = "6379"
+	}
 
-	var args []string = os.Args
-	if len(args) > 1 {
-		portIndex := slices.Index(args, "--port")
-		if portIndex != -1 {
-			if len(args) < portIndex {
-				fmt.Println("Argument --port was not followed with a valid port")
-				os.Exit(1)
-			} else {
-				port = args[portIndex+1]
-				_, err := strconv.Atoi(port)
-				if err != nil {
-					fmt.Println("Invalid port: " + port)
-					os.Exit(1)
-				}
-			}
-		}
+	replicaOf, err := getArg("--replicaof")
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+	if replicaOf == "" {
+		os.Setenv("ROLE", "master")
+	} else {
+		os.Setenv("ROLE", "slave")
 	}
 
 	l, err := net.Listen("tcp", "0.0.0.0:"+port)

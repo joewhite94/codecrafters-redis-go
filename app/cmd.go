@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -225,7 +226,7 @@ func cmdInfo(args []string) respElement {
 
 	res := &respBulkString{}
 	if param == "replication" {
-		res.value = "role:master"
+		res.value = "role:" + os.Getenv("ROLE")
 	}
 	return res
 }
