@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"slices"
+	"strconv"
 )
 
 type redisConn struct {
@@ -43,9 +45,29 @@ func handleConnection(conn net.Conn) {
 }
 
 func main() {
-	l, err := net.Listen("tcp", "0.0.0.0:6379")
+	var port string = "6379"
+
+	var args []string = os.Args
+	if len(args) > 1 {
+		portIndex := slices.Index(args, "--port")
+		if portIndex != -1 {
+			if len(args) < portIndex {
+				fmt.Println("Argument --port was not followed with a valid port")
+				os.Exit(1)
+			} else {
+				port = args[portIndex+1]
+				_, err := strconv.Atoi(port)
+				if err != nil {
+					fmt.Println("Invalid port: " + port)
+					os.Exit(1)
+				}
+			}
+		}
+	}
+
+	l, err := net.Listen("tcp", "0.0.0.0:"+port)
 	if err != nil {
-		fmt.Println("Failed to bind to port 6379")
+		fmt.Println("Failed to bind to port" + port)
 		os.Exit(1)
 	}
 
