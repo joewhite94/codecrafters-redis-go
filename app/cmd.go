@@ -41,6 +41,8 @@ func runCmd(rc *redisConn, args []string) respElement {
 		return cmdGet(args)
 	case "INCR":
 		return cmdIncr(args)
+	case "INFO":
+		return cmdInfo(args)
 	case "LLEN":
 		return cmdLlen(args)
 	case "LPOP":
@@ -215,6 +217,16 @@ func cmdIncr(args []string) respElement {
 		value: i,
 	}
 
+	return res
+}
+
+func cmdInfo(args []string) respElement {
+	param := args[1]
+
+	res := &respBulkString{}
+	if param == "replication" {
+		res.value = "role:master"
+	}
 	return res
 }
 
