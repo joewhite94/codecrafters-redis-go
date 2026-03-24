@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -226,7 +225,7 @@ func cmdInfo(args []string) respElement {
 
 	res := &respBulkString{}
 	if param == "replication" {
-		res.value = "role:" + os.Getenv("ROLE")
+		res.value = fmt.Sprintf("role:%s\nmaster_replid:%s\nmaster_repl_offset:%v", role, replId, replOffset)
 	}
 	return res
 }

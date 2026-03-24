@@ -13,6 +13,9 @@ type redisConn struct {
 	queue [][]string
 }
 
+var replId, role string
+var replOffset int
+
 func getArg(arg string) (string, error) {
 	var args []string = os.Args
 	var res string
@@ -77,9 +80,11 @@ func main() {
 		os.Exit(1)
 	}
 	if replicaOf == "" {
-		os.Setenv("ROLE", "master")
+		role = "master"
+		replId = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb"
+		replOffset = 0
 	} else {
-		os.Setenv("ROLE", "slave")
+		role = "slave"
 	}
 
 	l, err := net.Listen("tcp", "0.0.0.0:"+port)
