@@ -55,6 +55,8 @@ func runCmd(rc *redisConn, args []string) respElement {
 		return cmdMulti(rc)
 	case "PING":
 		return cmdPing()
+	case "REPLCONF":
+		return cmdReplconf()
 	case "RPUSH":
 		return cmdRpush(args)
 	case "SET":
@@ -430,6 +432,13 @@ func cmdMulti(rc *redisConn) respElement {
 func cmdPing() respElement {
 	res := &respSimpleString{
 		value: "PONG",
+	}
+	return res
+}
+
+func cmdReplconf() respElement {
+	res := &respSimpleString{
+		value: "OK",
 	}
 	return res
 }
