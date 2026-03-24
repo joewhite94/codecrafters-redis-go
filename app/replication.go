@@ -5,11 +5,12 @@ import (
 	"net"
 )
 
-func replSendHandshake(masterAddr string) error {
-	conn, err := net.Dial("tcp", masterAddr)
-	if err != nil {
-		return fmt.Errorf("Replica failed to connect to master: %s\n", err.Error())
-	}
+func replPsync(masterAddr string) error {
+
+}
+
+func replSendHandshake(conn net.Conn) error {
+	var err error
 
 	var ping = &respArray{
 		value: []respElement{

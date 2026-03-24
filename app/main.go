@@ -92,7 +92,13 @@ func main() {
 		masterHost := masterAddr[0]
 		masterPort := masterAddr[1]
 
-		err = replSendHandshake((masterHost + ":" + masterPort))
+		conn, err := net.Dial("tcp", masterHost+":"+masterPort)
+		if err != nil {
+			fmt.Printf("Replica failed to connect to master: %s\n", err.Error())
+			os.Exit(1)
+		}
+
+		err = replSendHandshake(conn)
 		if err != nil {
 			os.Exit(1)
 		}
