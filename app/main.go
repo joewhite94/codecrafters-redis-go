@@ -97,8 +97,14 @@ func main() {
 			fmt.Printf("Replica failed to connect to master: %s\n", err.Error())
 			os.Exit(1)
 		}
+		defer conn.Close()
 
 		err = replSendHandshake(conn)
+		if err != nil {
+			os.Exit(1)
+		}
+
+		err = replPsync(conn)
 		if err != nil {
 			os.Exit(1)
 		}

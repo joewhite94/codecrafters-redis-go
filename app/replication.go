@@ -3,10 +3,46 @@ package main
 import (
 	"fmt"
 	"net"
+	"strconv"
 )
 
-func replPsync(masterAddr string) error {
+func replPsync(conn net.Conn) error {
+	var err error
 
+	var psyncReplId string = replId
+	var psyncReplOffset int = replOffset
+	if psyncReplId == "" {
+		psyncReplId = "?"
+		psyncReplOffset = -1
+	}
+
+	var psync = &respArray{
+		value: []respElement{
+			&respBulkString{
+				value: "PSYNC",
+			},
+			&respBulkString{
+				value: psyncReplId,
+			},
+			&respBulkString{
+				value: strconv.Itoa(psyncReplOffset),
+			},
+		},
+	}
+
+	_, err = conn.Write([]byte(psync.ToString()))
+	if err != nil {
+		return fmt.Errorf("Replica failed to PSYNC master: %s\n", err.Error())
+	}
+
+	buf := make([]byte, 1024)
+
+	_, err = conn.Read(buf)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func replSendHandshake(conn net.Conn) error {
@@ -57,6 +93,11 @@ func replSendHandshake(conn net.Conn) error {
 		return fmt.Errorf("Replica failed to REPLCONF master :%s\n", err.Error())
 	}
 
+	_, err = conn.Read(buf)
+	if err != nil {
+		return err
+	}
+
 	var replConf2 = &respArray{
 		value: []respElement{
 			&respBulkString{
@@ -73,6 +114,11 @@ func replSendHandshake(conn net.Conn) error {
 	_, err = conn.Write([]byte(replConf2.ToString()))
 	if err != nil {
 		return fmt.Errorf("Replica failed to REPLCONF master :%s\n", err.Error())
+	}
+
+	_, err = conn.Read(buf)
+	if err != nil {
+		return err
 	}
 
 	return nil
