@@ -55,6 +55,8 @@ func runCmd(rc *redisConn, args []string) respElement {
 		return cmdMulti(rc)
 	case "PING":
 		return cmdPing()
+	case "PSYNC":
+		return cmdPsync()
 	case "REPLCONF":
 		return cmdReplconf()
 	case "RPUSH":
@@ -432,6 +434,13 @@ func cmdMulti(rc *redisConn) respElement {
 func cmdPing() respElement {
 	res := &respSimpleString{
 		value: "PONG",
+	}
+	return res
+}
+
+func cmdPsync() respElement {
+	res := &respSimpleString{
+		value: "FULLRESYNC " + replId + " " + strconv.Itoa(replOffset),
 	}
 	return res
 }
