@@ -5,6 +5,7 @@ import (
 	"net"
 	"os"
 	"slices"
+	"strings"
 )
 
 type redisConn struct {
@@ -85,6 +86,28 @@ func main() {
 		replOffset = 0
 	} else {
 		role = "slave"
+		masterAddr := strings.Split(replicaOf, " ")
+		masterHost := masterAddr[0]
+		masterPort := masterAddr[1]
+
+		conn, err := net.Dial("tcp", masterHost+":"+masterPort)
+		if err != nil {
+			fmt.Printf("Replica failed to connect to master: %s\n", err.Error())
+			os.Exit(1)
+		}
+
+		var ping = &respArray{
+			value: []respElement{
+				&respBulkString{
+					value: "PING",
+				},
+			},
+		}
+		_, err = conn.Write([]byte(ping.ToString()))
+		if err != nil {
+			fmt.Printf("Replica failed to ping master: %s\n", err.Error())
+			os.Exit(1)
+		}
 	}
 
 	l, err := net.Listen("tcp", "0.0.0.0:"+port)
