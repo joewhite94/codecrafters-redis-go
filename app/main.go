@@ -14,7 +14,7 @@ type redisConn struct {
 	queue [][]string
 }
 
-var replId, role string
+var port, replId, role string
 var replOffset int
 
 func getArg(arg string) (string, error) {
@@ -66,7 +66,9 @@ func handleConnection(conn net.Conn) {
 }
 
 func main() {
-	port, err := getArg("--port")
+	var err error
+
+	port, err = getArg("--port")
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
@@ -90,22 +92,8 @@ func main() {
 		masterHost := masterAddr[0]
 		masterPort := masterAddr[1]
 
-		conn, err := net.Dial("tcp", masterHost+":"+masterPort)
+		err = replSendHandshake((masterHost + ":" + masterPort))
 		if err != nil {
-			fmt.Printf("Replica failed to connect to master: %s\n", err.Error())
-			os.Exit(1)
-		}
-
-		var ping = &respArray{
-			value: []respElement{
-				&respBulkString{
-					value: "PING",
-				},
-			},
-		}
-		_, err = conn.Write([]byte(ping.ToString()))
-		if err != nil {
-			fmt.Printf("Replica failed to ping master: %s\n", err.Error())
 			os.Exit(1)
 		}
 	}

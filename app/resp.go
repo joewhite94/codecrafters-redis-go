@@ -147,3 +147,17 @@ func readRespInput(elems string) ([]string, error) {
 
 	return args, nil
 }
+
+// func readRespRepl(elems string) ([]respElement, error) {
+// 	if string(elems[0]) != "+" {
+// 		return nil, fmt.Errorf("Unimplemented")
+// 	}
+
+// 	val, _, _ := strings.Cut(elems[1:], "\r\n")
+
+// 	return []respElement{
+// 		&respSimpleString{
+// 			value: val,
+// 		},
+// 	}, nil
+// }
