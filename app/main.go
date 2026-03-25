@@ -35,8 +35,6 @@ func handleConnection(conn net.Conn, isRepl bool) {
 		isRepl: isRepl,
 	}
 
-	fmt.Println("handling connection")
-
 	defer rc.conn.Close()
 
 	for {
@@ -83,8 +81,6 @@ func handleConnection(conn net.Conn, isRepl bool) {
 
 func main() {
 	var err error
-
-	fmt.Println("complete sanity check")
 
 	port, err = getArg("--port")
 	if err != nil {

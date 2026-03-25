@@ -43,8 +43,6 @@ func (rc *redisConn) runCmd(args []string) []respElement {
 
 	cmd := args[0]
 
-	fmt.Println(cmd)
-
 	if role == "master" && slices.Contains(writeCmds, cmd) {
 		replPropagate(args)
 	}
@@ -512,7 +510,6 @@ func (rc *redisConn) cmdPsyncSendRdb() respElement {
 }
 
 func (rc *redisConn) cmdReplconf(args []string) respElement {
-	fmt.Println(args)
 	if slices.ContainsFunc(args, func(e string) bool {
 		return strings.ToLower(e) == "getack"
 	}) {
