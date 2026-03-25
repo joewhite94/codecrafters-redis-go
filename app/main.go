@@ -8,12 +8,6 @@ import (
 	"strings"
 )
 
-type redisConn struct {
-	conn  net.Conn
-	multi bool
-	queue [][]string
-}
-
 var port, replId, role string
 var replOffset int
 
@@ -37,7 +31,8 @@ func getArg(arg string) (string, error) {
 
 func handleConnection(conn net.Conn, isRepl bool) {
 	rc := &redisConn{
-		conn: conn,
+		conn:   conn,
+		isRepl: isRepl,
 	}
 
 	defer rc.conn.Close()
@@ -67,12 +62,12 @@ func handleConnection(conn net.Conn, isRepl bool) {
 
 		res := []respElement{}
 		for _, args := range argSets {
-			res = append(res, cmd(rc, args)...)
+			res = append(res, rc.cmd(args)...)
 		}
 
 		for _, e := range res {
-			w := []byte{}
-			if !isRepl {
+			var w = []byte{}
+			if e != nil {
 				w = []byte(e.ToString())
 			}
 			_, err = conn.Write(w)

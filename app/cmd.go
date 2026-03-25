@@ -2,35 +2,43 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
 )
 
+type redisConn struct {
+	conn   net.Conn
+	isRepl bool
+	multi  bool
+	queue  [][]string
+}
+
 var transactionalCmds = []string{"DISCARD", "EXEC"}
 var writeCmds = []string{"DEL", "INCR", "LPOP", "LPUSH", "RPUSH", "SET", "XADD"}
 
 var emptyRdb = "UkVESVMwMDEx+glyZWRpcy12ZXIFNy4yLjD6CnJlZGlzLWJpdHPAQPoFY3RpbWXCbQi8ZfoIdXNlZC1tZW3CsMQQAPoIYW9mLWJhc2XAAP/wbjv+wP9aog=="
 
-func cmd(rc *redisConn, args []string) []respElement {
+func (rc *redisConn) cmd(args []string) []respElement {
 	res := []respElement{}
 	if rc.multi && !slices.Contains(transactionalCmds, args[0]) {
-		queueCmd(rc, args)
+		rc.queueCmd(args)
 		res = append(res, &respSimpleString{
 			value: "QUEUED",
 		})
 	} else {
-		res = runCmd(rc, args)
+		res = rc.runCmd(args)
 	}
 	return res
 }
 
-func queueCmd(rc *redisConn, args []string) {
+func (rc *redisConn) queueCmd(args []string) {
 	rc.queue = append(rc.queue, args)
 }
 
-func runCmd(rc *redisConn, args []string) []respElement {
+func (rc *redisConn) runCmd(args []string) []respElement {
 	var res []respElement
 
 	cmd := args[0]
@@ -41,48 +49,48 @@ func runCmd(rc *redisConn, args []string) []respElement {
 
 	switch cmd {
 	case "BLPOP":
-		res = append(res, cmdBlpop(args))
+		res = append(res, rc.cmdBlpop(args))
 	case "DISCARD":
-		res = append(res, cmdDiscard(rc))
+		res = append(res, rc.cmdDiscard())
 	case "ECHO":
-		res = append(res, cmdEcho(args))
+		res = append(res, rc.cmdEcho(args))
 	case "EXEC":
-		res = append(res, cmdExec(rc))
+		res = append(res, rc.cmdExec())
 	case "GET":
-		res = append(res, cmdGet(args))
+		res = append(res, rc.cmdGet(args))
 	case "INCR":
-		res = append(res, cmdIncr(args))
+		res = append(res, rc.cmdIncr(args))
 	case "INFO":
-		res = append(res, cmdInfo(args))
+		res = append(res, rc.cmdInfo(args))
 	case "LLEN":
-		res = append(res, cmdLlen(args))
+		res = append(res, rc.cmdLlen(args))
 	case "LPOP":
-		res = append(res, cmdLpop(args))
+		res = append(res, rc.cmdLpop(args))
 	case "LPUSH":
-		res = append(res, cmdLpush(args))
+		res = append(res, rc.cmdLpush(args))
 	case "LRANGE":
-		res = append(res, cmdLrange(args))
+		res = append(res, rc.cmdLrange(args))
 	case "MULTI":
-		res = append(res, cmdMulti(rc))
+		res = append(res, rc.cmdMulti())
 	case "PING":
-		res = append(res, cmdPing())
+		res = append(res, rc.cmdPing())
 	case "PSYNC":
-		res = append(res, cmdPsync(rc))
-		res = append(res, cmdPsyncSendRdb())
+		res = append(res, rc.cmdPsync())
+		res = append(res, rc.cmdPsyncSendRdb())
 	case "REPLCONF":
-		res = append(res, cmdReplconf())
+		res = append(res, rc.cmdReplconf(args))
 	case "RPUSH":
-		res = append(res, cmdRpush(args))
+		res = append(res, rc.cmdRpush(args))
 	case "SET":
-		res = append(res, cmdSet(args))
+		res = append(res, rc.cmdSet(args))
 	case "TYPE":
-		res = append(res, cmdType(args))
+		res = append(res, rc.cmdType(args))
 	case "XADD":
-		res = append(res, cmdXadd(args))
+		res = append(res, rc.cmdXadd(args))
 	case "XRANGE":
-		res = append(res, cmdXrange(args))
+		res = append(res, rc.cmdXrange(args))
 	case "XREAD":
-		res = append(res, cmdXread(args))
+		res = append(res, rc.cmdXread(args))
 	default:
 		res = []respElement{
 			&respError{
@@ -93,7 +101,7 @@ func runCmd(rc *redisConn, args []string) []respElement {
 	return res
 }
 
-func cmdBlpop(args []string) respElement {
+func (rc *redisConn) cmdBlpop(args []string) respElement {
 	key := args[1]
 
 	var deadline time.Time
@@ -151,14 +159,14 @@ func cmdBlpop(args []string) respElement {
 	return res
 }
 
-func cmdEcho(args []string) respElement {
+func (rc *redisConn) cmdEcho(args []string) respElement {
 	res := &respBulkString{
 		value: args[1],
 	}
 	return res
 }
 
-func cmdDiscard(rc *redisConn) respElement {
+func (rc *redisConn) cmdDiscard() respElement {
 	if !rc.multi {
 		res := &respError{
 			value: "ERR DISCARD without MULTI",
@@ -173,7 +181,7 @@ func cmdDiscard(rc *redisConn) respElement {
 	return res
 }
 
-func cmdExec(rc *redisConn) respElement {
+func (rc *redisConn) cmdExec() respElement {
 	if !rc.multi {
 		res := &respError{
 			value: "ERR EXEC without MULTI",
@@ -183,13 +191,13 @@ func cmdExec(rc *redisConn) respElement {
 	rc.multi = false
 	res := &respArray{}
 	for _, c := range rc.queue {
-		r := runCmd(rc, c)
+		r := rc.runCmd(c)
 		res.value = append(res.value, r...)
 	}
 	return res
 }
 
-func cmdGet(args []string) respElement {
+func (rc *redisConn) cmdGet(args []string) respElement {
 	key := args[1]
 
 	var res respElement
@@ -205,7 +213,7 @@ func cmdGet(args []string) respElement {
 	return res
 }
 
-func cmdIncr(args []string) respElement {
+func (rc *redisConn) cmdIncr(args []string) respElement {
 	key := args[1]
 
 	val, ok := db.Load(key)
@@ -236,20 +244,27 @@ func cmdIncr(args []string) respElement {
 		value: i,
 	}
 
+	if rc.isRepl {
+		return nil
+	}
 	return res
 }
 
-func cmdInfo(args []string) respElement {
+func (rc *redisConn) cmdInfo(args []string) respElement {
 	param := args[1]
 
 	res := &respBulkString{}
 	if param == "replication" {
 		res.value = fmt.Sprintf("role:%s\nmaster_replid:%s\nmaster_repl_offset:%v", role, replId, replOffset)
 	}
+
+	if rc.isRepl {
+		return nil
+	}
 	return res
 }
 
-func cmdLlen(args []string) respElement {
+func (rc *redisConn) cmdLlen(args []string) respElement {
 	key := args[1]
 
 	val, ok := db.Load(key)
@@ -269,10 +284,13 @@ func cmdLlen(args []string) respElement {
 		value: len(arr.value),
 	}
 
+	if rc.isRepl {
+		return nil
+	}
 	return res
 }
 
-func cmdLpop(args []string) respElement {
+func (rc *redisConn) cmdLpop(args []string) respElement {
 	key := args[1]
 
 	var count int = 1
@@ -322,10 +340,13 @@ func cmdLpop(args []string) respElement {
 		db.Store(key, list)
 	}
 
+	if rc.isRepl {
+		return nil
+	}
 	return res
 }
 
-func cmdLpush(args []string) respElement {
+func (rc *redisConn) cmdLpush(args []string) respElement {
 	key := args[1]
 
 	val, ok := db.Load(key)
@@ -354,10 +375,13 @@ func cmdLpush(args []string) respElement {
 		value: len(list.value),
 	}
 
+	if rc.isRepl {
+		return nil
+	}
 	return res
 }
 
-func cmdLrange(args []string) respElement {
+func (rc *redisConn) cmdLrange(args []string) respElement {
 	if len(args) < 4 {
 		res := &respError{
 			value: "LRANGE requires a key, start index and stop index",
@@ -435,49 +459,83 @@ func cmdLrange(args []string) respElement {
 		res.value[i] = li.ToResp()
 	}
 
+	if rc.isRepl {
+		return nil
+	}
 	return res
 }
 
-func cmdMulti(rc *redisConn) respElement {
+func (rc *redisConn) cmdMulti() respElement {
 	rc.multi = true
 	res := &respSimpleString{
 		value: "OK",
 	}
-	return res
-}
-
-func cmdPing() respElement {
-	res := &respSimpleString{
-		value: "PONG",
+	if rc.isRepl {
+		return nil
 	}
 	return res
 }
 
-func cmdPsync(rc *redisConn) respElement {
+func (rc *redisConn) cmdPing() respElement {
+	res := &respSimpleString{
+		value: "PONG",
+	}
+	if rc.isRepl {
+		return nil
+	}
+	return res
+}
+
+func (rc *redisConn) cmdPsync() respElement {
 	replicas = append(replicas, &replSlave{
 		conn: rc.conn,
 	})
 	res := &respSimpleString{
 		value: "FULLRESYNC " + replId + " " + strconv.Itoa(replOffset),
 	}
-	return res
-}
-
-func cmdPsyncSendRdb() respElement {
-	res := &respRdb{
-		value: emptyRdb,
+	if rc.isRepl {
+		return nil
 	}
 	return res
 }
 
-func cmdReplconf() respElement {
+func (rc *redisConn) cmdPsyncSendRdb() respElement {
+	res := &respRdb{
+		value: emptyRdb,
+	}
+	if rc.isRepl {
+		return nil
+	}
+	return res
+}
+
+func (rc *redisConn) cmdReplconf(args []string) respElement {
+	if slices.ContainsFunc(args, func(e string) bool {
+		return strings.ToLower(e) == "getack"
+	}) {
+		res := &respArray{
+			value: []respElement{
+				&respBulkString{
+					value: "REPLCONF",
+				},
+				&respBulkString{
+					value: "ACK",
+				},
+				&respBulkString{
+					value: strconv.Itoa(replOffset),
+				},
+			},
+		}
+		return res
+	}
+
 	res := &respSimpleString{
 		value: "OK",
 	}
 	return res
 }
 
-func cmdRpush(args []string) respElement {
+func (rc *redisConn) cmdRpush(args []string) respElement {
 	key := args[1]
 
 	val, ok := db.Load(key)
@@ -506,10 +564,13 @@ func cmdRpush(args []string) respElement {
 		value: len(list.value),
 	}
 
+	if rc.isRepl {
+		return nil
+	}
 	return res
 }
 
-func cmdSet(args []string) respElement {
+func (rc *redisConn) cmdSet(args []string) respElement {
 	key := args[1]
 
 	db.Store(key, NewDbString(args[2]))
@@ -549,10 +610,13 @@ func cmdSet(args []string) respElement {
 		value: "OK",
 	}
 
+	if rc.isRepl {
+		return nil
+	}
 	return res
 }
 
-func cmdType(args []string) respElement {
+func (rc *redisConn) cmdType(args []string) respElement {
 	key := args[1]
 
 	val, ok := db.Load(key)
@@ -566,10 +630,14 @@ func cmdType(args []string) respElement {
 	res := &respSimpleString{
 		value: val.Type(),
 	}
+
+	if rc.isRepl {
+		return nil
+	}
 	return res
 }
 
-func cmdXadd(args []string) respElement {
+func (rc *redisConn) cmdXadd(args []string) respElement {
 	key := args[1]
 
 	val, ok := db.Load(key)
@@ -692,10 +760,13 @@ func cmdXadd(args []string) respElement {
 		value: entry.id.value,
 	}
 
+	if rc.isRepl {
+		return nil
+	}
 	return res
 }
 
-func cmdXrange(args []string) respElement {
+func (rc *redisConn) cmdXrange(args []string) respElement {
 	if len(args) < 4 {
 		res := &respError{
 			value: "ERR XRANGE requires key, start, and stop arguments",
@@ -820,10 +891,13 @@ func cmdXrange(args []string) respElement {
 
 	arr.value = arr.value[startIndex:stopIndex]
 
+	if rc.isRepl {
+		return nil
+	}
 	return arr
 }
 
-func cmdXread(args []string) respElement {
+func (rc *redisConn) cmdXread(args []string) respElement {
 	arg := args[1]
 
 	var deadline time.Time
@@ -942,5 +1016,8 @@ func cmdXread(args []string) respElement {
 		}))
 	}
 
+	if rc.isRepl {
+		return nil
+	}
 	return res.ToResp()
 }
