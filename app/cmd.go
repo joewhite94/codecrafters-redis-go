@@ -10,72 +10,81 @@ import (
 
 var transactionalCmds = []string{"DISCARD", "EXEC"}
 
-func cmd(rc *redisConn, args []string) string {
+var emptyRdb = "UkVESVMwMDEx+glyZWRpcy12ZXIFNy4yLjD6CnJlZGlzLWJpdHPAQPoFY3RpbWXCbQi8ZfoIdXNlZC1tZW3CsMQQAPoIYW9mLWJhc2XAAP/wbjv+wP9aog=="
+
+func cmd(rc *redisConn, args []string) []respElement {
+	res := []respElement{}
 	if rc.multi && !slices.Contains(transactionalCmds, args[0]) {
 		queueCmd(rc, args)
-		res := &respSimpleString{
+		res = append(res, &respSimpleString{
 			value: "QUEUED",
-		}
-		return res.ToString()
+		})
 	} else {
-		return runCmd(rc, args).ToString()
+		res = runCmd(rc, args)
 	}
+	return res
 }
 
 func queueCmd(rc *redisConn, args []string) {
 	rc.queue = append(rc.queue, args)
 }
 
-func runCmd(rc *redisConn, args []string) respElement {
+func runCmd(rc *redisConn, args []string) []respElement {
+	var res []respElement
+
 	cmd := args[0]
 	switch cmd {
 	case "BLPOP":
-		return cmdBlpop(args)
+		res = append(res, cmdBlpop(args))
 	case "DISCARD":
-		return cmdDiscard(rc)
+		res = append(res, cmdDiscard(rc))
 	case "ECHO":
-		return cmdEcho(args)
+		res = append(res, cmdEcho(args))
 	case "EXEC":
-		return cmdExec(rc)
+		res = append(res, cmdExec(rc))
 	case "GET":
-		return cmdGet(args)
+		res = append(res, cmdGet(args))
 	case "INCR":
-		return cmdIncr(args)
+		res = append(res, cmdIncr(args))
 	case "INFO":
-		return cmdInfo(args)
+		res = append(res, cmdInfo(args))
 	case "LLEN":
-		return cmdLlen(args)
+		res = append(res, cmdLlen(args))
 	case "LPOP":
-		return cmdLpop(args)
+		res = append(res, cmdLpop(args))
 	case "LPUSH":
-		return cmdLpush(args)
+		res = append(res, cmdLpush(args))
 	case "LRANGE":
-		return cmdLrange(args)
+		res = append(res, cmdLrange(args))
 	case "MULTI":
-		return cmdMulti(rc)
+		res = append(res, cmdMulti(rc))
 	case "PING":
-		return cmdPing()
+		res = append(res, cmdPing())
 	case "PSYNC":
-		return cmdPsync()
+		res = append(res, cmdPsync())
+		res = append(res, cmdPsyncSendRdb())
 	case "REPLCONF":
-		return cmdReplconf()
+		res = append(res, cmdReplconf())
 	case "RPUSH":
-		return cmdRpush(args)
+		res = append(res, cmdRpush(args))
 	case "SET":
-		return cmdSet(args)
+		res = append(res, cmdSet(args))
 	case "TYPE":
-		return cmdType(args)
+		res = append(res, cmdType(args))
 	case "XADD":
-		return cmdXadd(args)
+		res = append(res, cmdXadd(args))
 	case "XRANGE":
-		return cmdXrange(args)
+		res = append(res, cmdXrange(args))
 	case "XREAD":
-		return cmdXread(args)
+		res = append(res, cmdXread(args))
 	default:
-		return &respError{
-			value: "ERR Unknown command",
+		res = []respElement{
+			&respError{
+				value: "ERR Unknown command",
+			},
 		}
 	}
+	return res
 }
 
 func cmdBlpop(args []string) respElement {
@@ -169,7 +178,7 @@ func cmdExec(rc *redisConn) respElement {
 	res := &respArray{}
 	for _, c := range rc.queue {
 		r := runCmd(rc, c)
-		res.value = append(res.value, r)
+		res.value = append(res.value, r...)
 	}
 	return res
 }
@@ -441,6 +450,13 @@ func cmdPing() respElement {
 func cmdPsync() respElement {
 	res := &respSimpleString{
 		value: "FULLRESYNC " + replId + " " + strconv.Itoa(replOffset),
+	}
+	return res
+}
+
+func cmdPsyncSendRdb() respElement {
+	res := &respRdb{
+		value: emptyRdb,
 	}
 	return res
 }

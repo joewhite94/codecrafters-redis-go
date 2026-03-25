@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"fmt"
 	"strconv"
 	"strings"
@@ -96,6 +97,19 @@ func (i *respInteger) ToDbEntry() (dbEntry, error) {
 func (i *respInteger) ToString() string {
 	// integer: :[<+|->]<value>\r\n
 	return fmt.Sprintf(":%v\r\n", i.value)
+}
+
+type respRdb struct {
+	value string
+}
+
+func (r *respRdb) ToDbEntry() (dbEntry, error) {
+	return NewDbString(r.value), nil
+}
+
+func (r *respRdb) ToString() string {
+	bin, _ := base64.StdEncoding.DecodeString(r.value)
+	return fmt.Sprintf("$%v\r\n%s", len(bin), bin)
 }
 
 type respSimpleString struct {

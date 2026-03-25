@@ -57,10 +57,13 @@ func handleConnection(conn net.Conn) {
 		}
 
 		res := cmd(rc, args)
-		_, err = conn.Write([]byte(res))
-		if err != nil {
-			fmt.Fprintf(os.Stderr, err.Error())
-			return
+
+		for _, e := range res {
+			_, err = conn.Write([]byte(e.ToString()))
+			if err != nil {
+				fmt.Fprintf(os.Stderr, err.Error())
+				return
+			}
 		}
 	}
 }
