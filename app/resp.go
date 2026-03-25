@@ -162,6 +162,18 @@ func readRespInput(elems string) ([]string, error) {
 	return args, nil
 }
 
+func writeRespInput(args []string) *respArray {
+	res := &respArray{
+		value: []respElement{},
+	}
+	for _, a := range args {
+		res.value = append(res.value, &respBulkString{
+			value: a,
+		})
+	}
+	return res
+}
+
 // func readRespRepl(elems string) ([]respElement, error) {
 // 	if string(elems[0]) != "+" {
 // 		return nil, fmt.Errorf("Unimplemented")

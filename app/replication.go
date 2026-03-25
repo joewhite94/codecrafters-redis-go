@@ -6,6 +6,24 @@ import (
 	"strconv"
 )
 
+var replicas = []*replSlave{}
+
+type replSlave struct {
+	conn net.Conn
+}
+
+func replPropagate(args []string) error {
+	resp := writeRespInput(args)
+	for i, r := range replicas {
+		_, err := r.conn.Write([]byte(resp.ToString()))
+		if err != nil {
+			fmt.Printf("Failed to propagate command %s to replica %v: %s\n", args[0], i, err.Error())
+			continue
+		}
+	}
+	return nil
+}
+
 func replPsync(conn net.Conn) error {
 	var err error
 

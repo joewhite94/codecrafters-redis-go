@@ -9,6 +9,7 @@ import (
 )
 
 var transactionalCmds = []string{"DISCARD", "EXEC"}
+var writeCmds = []string{"DEL", "INCR", "LPOP", "LPUSH", "RPUSH", "SET", "XADD"}
 
 var emptyRdb = "UkVESVMwMDEx+glyZWRpcy12ZXIFNy4yLjD6CnJlZGlzLWJpdHPAQPoFY3RpbWXCbQi8ZfoIdXNlZC1tZW3CsMQQAPoIYW9mLWJhc2XAAP/wbjv+wP9aog=="
 
@@ -33,6 +34,11 @@ func runCmd(rc *redisConn, args []string) []respElement {
 	var res []respElement
 
 	cmd := args[0]
+
+	if slices.Contains(writeCmds, cmd) {
+		replPropagate(args)
+	}
+
 	switch cmd {
 	case "BLPOP":
 		res = append(res, cmdBlpop(args))
@@ -61,7 +67,7 @@ func runCmd(rc *redisConn, args []string) []respElement {
 	case "PING":
 		res = append(res, cmdPing())
 	case "PSYNC":
-		res = append(res, cmdPsync())
+		res = append(res, cmdPsync(rc))
 		res = append(res, cmdPsyncSendRdb())
 	case "REPLCONF":
 		res = append(res, cmdReplconf())
@@ -447,7 +453,10 @@ func cmdPing() respElement {
 	return res
 }
 
-func cmdPsync() respElement {
+func cmdPsync(rc *redisConn) respElement {
+	replicas = append(replicas, &replSlave{
+		conn: rc.conn,
+	})
 	res := &respSimpleString{
 		value: "FULLRESYNC " + replId + " " + strconv.Itoa(replOffset),
 	}
