@@ -125,21 +125,21 @@ func (s *respSimpleString) ToString() string {
 	return fmt.Sprintf("+%s\r\n", s.value)
 }
 
-func readRespInput(elems string) ([]string, error) {
-	if string(elems[0]) != "*" {
-		return nil, fmt.Errorf("Client input must be an array of bulk strings")
+func readRespInput(elems string, i int) ([]string, int, error) {
+	if string(elems[i]) != "*" {
+		return nil, 0, fmt.Errorf("Client input must be an array of bulk strings")
 	}
 
 	// array: *<number-of-elements>\r\n<element-1>...<element-n>
 	countStr, _, _ := strings.Cut(elems[1:], "\r\n")
 	elemCount, err := strconv.Atoi(countStr)
 	if err != nil {
-		return nil, fmt.Errorf("Error parsing resp input: %v", err)
+		return nil, 0, fmt.Errorf("Error parsing resp input: %v", err)
 	}
 
 	args := make([]string, elemCount)
 
-	var i int = len(countStr) + 3
+	i += len(countStr) + 3
 	var j int = 0
 	for j < len(args) {
 		if string(elems[i]) == "$" {
@@ -147,7 +147,7 @@ func readRespInput(elems string) ([]string, error) {
 			length, bulkStr, _ := strings.Cut(elems[i+1:], "\r\n")
 			stringLen, err := strconv.Atoi(length)
 			if err != nil {
-				return nil, fmt.Errorf("Error parsing resp input: %v", err)
+				return nil, 0, fmt.Errorf("Error parsing resp input: %v", err)
 			}
 			bulkStr = bulkStr[:stringLen]
 			args[j] = bulkStr
@@ -159,7 +159,7 @@ func readRespInput(elems string) ([]string, error) {
 		}
 	}
 
-	return args, nil
+	return args, i, nil
 }
 
 func writeRespInput(args []string) *respArray {

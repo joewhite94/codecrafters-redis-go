@@ -35,7 +35,7 @@ func getArg(arg string) (string, error) {
 	return res, err
 }
 
-func handleConnection(conn net.Conn) {
+func handleConnection(conn net.Conn, isRepl bool) {
 	rc := &redisConn{
 		conn: conn,
 	}
@@ -45,21 +45,37 @@ func handleConnection(conn net.Conn) {
 	for {
 		buf := make([]byte, 1024)
 
-		_, err := rc.conn.Read(buf)
+		length, err := rc.conn.Read(buf)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, err.Error())
 			return
 		}
 
-		args, err := readRespInput(string(buf))
-		if err != nil {
-			fmt.Fprintf(os.Stderr, err.Error())
+		input := string(buf[:length])
+
+		var argSets [][]string
+		var index int
+		for index < length {
+			var args []string
+			var err error
+			args, index, err = readRespInput(input, index)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, err.Error())
+			}
+			argSets = append(argSets, args)
 		}
 
-		res := cmd(rc, args)
+		res := []respElement{}
+		for _, args := range argSets {
+			res = append(res, cmd(rc, args)...)
+		}
 
 		for _, e := range res {
-			_, err = conn.Write([]byte(e.ToString()))
+			w := []byte{}
+			if !isRepl {
+				w = []byte(e.ToString())
+			}
+			_, err = conn.Write(w)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, err.Error())
 				return
@@ -100,7 +116,6 @@ func main() {
 			fmt.Printf("Replica failed to connect to master: %s\n", err.Error())
 			os.Exit(1)
 		}
-		defer conn.Close()
 
 		err = replSendHandshake(conn)
 		if err != nil {
@@ -111,6 +126,8 @@ func main() {
 		if err != nil {
 			os.Exit(1)
 		}
+
+		go handleConnection(conn, true)
 	}
 
 	l, err := net.Listen("tcp", "0.0.0.0:"+port)
@@ -125,6 +142,6 @@ func main() {
 			fmt.Println("Error accepting connection: ", err.Error())
 			os.Exit(1)
 		}
-		go handleConnection(conn)
+		go handleConnection(conn, false)
 	}
 }

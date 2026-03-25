@@ -35,7 +35,7 @@ func runCmd(rc *redisConn, args []string) []respElement {
 
 	cmd := args[0]
 
-	if slices.Contains(writeCmds, cmd) {
+	if role == "master" && slices.Contains(writeCmds, cmd) {
 		replPropagate(args)
 	}
 
