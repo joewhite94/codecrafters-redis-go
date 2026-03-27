@@ -36,7 +36,6 @@ func handleConnection(rc redisConnection) {
 		}
 
 		input := string(buf[:length])
-		fmt.Println(input)
 
 		var argSets [][]string
 		var index int
