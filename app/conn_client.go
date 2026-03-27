@@ -619,7 +619,7 @@ func (rc *redisConn) cmdType(args []string) respElement {
 
 func (rc *redisConn) cmdWait(_ []string) respElement {
 	res := &respInteger{
-		value: 0,
+		value: len(replicas),
 	}
 
 	return res
