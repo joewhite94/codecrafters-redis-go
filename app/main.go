@@ -13,10 +13,15 @@ var replOffset int
 
 type redisConnection interface {
 	Close()
-	Cmd(args []string) []respElement
+	Cmd(args argSet) []respElement
 	Init() error
 	Read(b []byte) (int, error)
 	Write(b []byte) (int, error)
+}
+
+type argSet struct {
+	args  []string
+	bytes int
 }
 
 func handleConnection(rc redisConnection) {
@@ -37,16 +42,23 @@ func handleConnection(rc redisConnection) {
 
 		input := string(buf[:length])
 
-		var argSets [][]string
+		var argSets []argSet
 		var index int
 		for index < length {
 			var args []string
 			var err error
+			oldI := index
 			args, index, err = readRespInput(input, index)
 			if err != nil {
-				continue
+				fmt.Printf("error reading input: %s", err.Error())
+				break
 			}
-			argSets = append(argSets, args)
+			if len(args) > 0 {
+				argSets = append(argSets, argSet{
+					args:  args,
+					bytes: index - oldI,
+				})
+			}
 		}
 
 		res := []respElement{}

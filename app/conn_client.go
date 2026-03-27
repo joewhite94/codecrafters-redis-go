@@ -21,7 +21,7 @@ var replicas = []*redisConn{}
 type redisConn struct {
 	conn  net.Conn
 	multi bool
-	queue [][]string
+	queue []argSet
 }
 
 func (rc *redisConn) Close() {
@@ -40,15 +40,15 @@ func (rc *redisConn) Write(b []byte) (int, error) {
 	return rc.conn.Write(b)
 }
 
-func (rc *redisConn) Cmd(args []string) []respElement {
+func (rc *redisConn) Cmd(as argSet) []respElement {
 	res := []respElement{}
-	if rc.multi && !slices.Contains(transactionalCmds, args[0]) {
-		rc.queueCmd(args)
+	if rc.multi && !slices.Contains(transactionalCmds, as.args[0]) {
+		rc.queueCmd(as)
 		res = append(res, &respSimpleString{
 			value: "QUEUED",
 		})
 	} else {
-		res = rc.runCmd(args)
+		res = rc.runCmd(as)
 	}
 	return res
 }
@@ -64,12 +64,14 @@ func propagateCmd(args []string) {
 	}
 }
 
-func (rc *redisConn) queueCmd(args []string) {
-	rc.queue = append(rc.queue, args)
+func (rc *redisConn) queueCmd(as argSet) {
+	rc.queue = append(rc.queue, as)
 }
 
-func (rc *redisConn) runCmd(args []string) []respElement {
+func (rc *redisConn) runCmd(as argSet) []respElement {
 	var res []respElement
+
+	args := as.args
 
 	cmd := args[0]
 
@@ -204,7 +206,7 @@ func (rc *redisConn) cmdDiscard() respElement {
 		return res
 	}
 	rc.multi = false
-	rc.queue = [][]string{}
+	rc.queue = []argSet{}
 	res := &respSimpleString{
 		value: "OK",
 	}

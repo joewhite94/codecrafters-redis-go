@@ -126,39 +126,58 @@ func (s *respSimpleString) ToString() string {
 }
 
 func readRespInput(elems string, i int) ([]string, int, error) {
-	if string(elems[i]) != "*" {
-		return nil, 0, fmt.Errorf("Client input must be an array of bulk strings")
-	}
+	respType := string(elems[i])
+	var args []string
 
-	// array: *<number-of-elements>\r\n<element-1>...<element-n>
-	countStr, _, _ := strings.Cut(elems[1:], "\r\n")
-	elemCount, err := strconv.Atoi(countStr)
-	if err != nil {
-		return nil, 0, fmt.Errorf("Error parsing resp input: %v", err)
-	}
+	switch respType {
+	case "+":
+		args = make([]string, 1)
+		next := strings.Index(elems, "*")
+		if next == -1 {
+			next = len(elems)
+		}
+		strs := strings.Split(elems[:next], " ")
+		if strs[0] == "+FULLRESYNC" {
+			args = strs
+		}
+		i += len(elems[:next])
+	case "*":
+		// array: *<number-of-elements>\r\n<element-1>...<element-n>
+		countStr, _, _ := strings.Cut(elems[i+1:], "\r\n")
+		elemCount, err := strconv.Atoi(countStr)
+		if err != nil {
+			return nil, 0, fmt.Errorf("Error parsing resp input: %v", err)
+		}
 
-	args := make([]string, elemCount)
+		args = make([]string, elemCount)
 
-	i += len(countStr) + 3
-	var j int = 0
-	for j < len(args) {
-		if string(elems[i]) == "$" {
-			// start new bulk string
-			length, bulkStr, _ := strings.Cut(elems[i+1:], "\r\n")
-			stringLen, err := strconv.Atoi(length)
-			if err != nil {
-				return nil, 0, fmt.Errorf("Error parsing resp input: %v", err)
+		i += len(countStr) + 3
+		var j int = 0
+		for j < len(args) {
+			if string(elems[i]) == "$" {
+				// start new bulk string
+				length, bulkStr, _ := strings.Cut(elems[i+1:], "\r\n")
+				stringLen, err := strconv.Atoi(length)
+				if err != nil {
+					return nil, 0, fmt.Errorf("Error parsing resp input: %v", err)
+				}
+				bulkStr = bulkStr[:stringLen]
+				args[j] = bulkStr
+				j++
+				// $length\r\nstring\r\n
+				i += len(length) + stringLen + 5
+			} else {
+				i++
 			}
-			bulkStr = bulkStr[:stringLen]
-			args[j] = bulkStr
-			j++
-			// $length\r\nstring\r\n
-			i += len(length) + stringLen + 5
-		} else {
-			i++
+		}
+
+		return args, i, nil
+	default:
+		i = strings.IndexAny(elems[i:], "+*")
+		if i == -1 {
+			i = len(elems)
 		}
 	}
-
 	return args, i, nil
 }
 

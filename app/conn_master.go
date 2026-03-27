@@ -11,18 +11,15 @@ import (
 
 type redisMasterConn struct {
 	redisConn
-	readBytes      int
 	readBytesTotal int
 }
 
 func (rmc *redisMasterConn) Read(b []byte) (int, error) {
 	i, err := rmc.conn.Read(b)
-	rmc.readBytes = i
-	rmc.readBytesTotal += i
 	return i, err
 }
 
-func (rmc *redisMasterConn) Cmd(args []string) []respElement {
+func (rmc *redisMasterConn) Cmd(args argSet) []respElement {
 	return rmc.runCmd(args)
 }
 
@@ -39,16 +36,22 @@ func (rmc *redisMasterConn) Init() error {
 	return nil
 }
 
-func (rmc *redisMasterConn) runCmd(args []string) []respElement {
+func (rmc *redisMasterConn) runCmd(as argSet) []respElement {
 	var res []respElement
+
+	args := as.args
 
 	cmd := args[0]
 
 	switch cmd {
+	case "+FULLRESYNC":
+		return nil
 	case "REPLCONF":
 		res = append(res, rmc.cmdReplconf(args))
+		rmc.readBytesTotal += as.bytes
 	default:
-		_ = rmc.redisConn.runCmd(args)
+		_ = rmc.redisConn.runCmd(as)
+		rmc.readBytesTotal += as.bytes
 	}
 	return res
 }
@@ -66,7 +69,7 @@ func (rmc *redisMasterConn) cmdReplconf(args []string) respElement {
 					value: "ACK",
 				},
 				&respBulkString{
-					value: strconv.Itoa(rmc.readBytesTotal - rmc.readBytes),
+					value: strconv.Itoa(rmc.readBytesTotal),
 				},
 			},
 		}
@@ -153,7 +156,7 @@ func (rmc *redisMasterConn) sendPsync() error {
 	var err error
 
 	var psyncReplId string = replId
-	var psyncReplOffset int = rmc.readBytes
+	var psyncReplOffset int = rmc.readBytesTotal
 	if psyncReplId == "" {
 		psyncReplId = "?"
 		psyncReplOffset = -1
@@ -176,13 +179,6 @@ func (rmc *redisMasterConn) sendPsync() error {
 	_, err = rmc.Write([]byte(psync.ToString()))
 	if err != nil {
 		return fmt.Errorf("Replica failed to PSYNC master: %s\n", err.Error())
-	}
-
-	buf := make([]byte, 4096)
-
-	_, err = rmc.conn.Read(buf)
-	if err != nil {
-		return err
 	}
 
 	return nil
