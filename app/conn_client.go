@@ -117,6 +117,8 @@ func (rc *redisConn) runCmd(as argSet) []respElement {
 		res = append(res, rc.cmdSet(args))
 	case "TYPE":
 		res = append(res, rc.cmdType(args))
+	case "WAIT":
+		res = append(res, rc.cmdWait(args))
 	case "XADD":
 		res = append(res, rc.cmdXadd(args))
 	case "XRANGE":
@@ -610,6 +612,14 @@ func (rc *redisConn) cmdType(args []string) respElement {
 
 	res := &respSimpleString{
 		value: val.Type(),
+	}
+
+	return res
+}
+
+func (rc *redisConn) cmdWait(_ []string) respElement {
+	res := &respInteger{
+		value: 0,
 	}
 
 	return res
