@@ -11,6 +11,64 @@ import (
 var port, replId, role string
 var replOffset int
 
+type redisConnection interface {
+	Close()
+	Cmd(args []string) []respElement
+	Init() error
+	Read(b []byte) (int, error)
+	Write(b []byte) (int, error)
+}
+
+func handleConnection(rc redisConnection) {
+	defer rc.Close()
+
+	if err := rc.Init(); err != nil {
+		os.Exit(1)
+	}
+
+	for {
+		buf := make([]byte, 4096)
+
+		length, err := rc.Read(buf)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, err.Error())
+			return
+		}
+
+		input := string(buf[:length])
+		fmt.Println(input)
+
+		var argSets [][]string
+		var index int
+		for index < length {
+			var args []string
+			var err error
+			args, index, err = readRespInput(input, index)
+			if err != nil {
+				continue
+			}
+			argSets = append(argSets, args)
+		}
+
+		res := []respElement{}
+		for _, args := range argSets {
+			res = append(res, rc.Cmd(args)...)
+		}
+
+		for _, e := range res {
+			var w = []byte{}
+			if e != nil {
+				w = []byte(e.ToString())
+			}
+			_, err = rc.Write(w)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, err.Error())
+				return
+			}
+		}
+	}
+}
+
 func getArg(arg string) (string, error) {
 	var args []string = os.Args
 	var res string
@@ -27,56 +85,6 @@ func getArg(arg string) (string, error) {
 		}
 	}
 	return res, err
-}
-
-func handleConnection(conn net.Conn, isRepl bool) {
-	rc := &redisConn{
-		conn:   conn,
-		isRepl: isRepl,
-	}
-
-	defer rc.conn.Close()
-
-	for {
-		buf := make([]byte, 1024)
-
-		length, err := rc.conn.Read(buf)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, err.Error())
-			return
-		}
-
-		input := string(buf[:length])
-
-		var argSets [][]string
-		var index int
-		for index < length {
-			var args []string
-			var err error
-			args, index, err = readRespInput(input, index)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, err.Error())
-			}
-			argSets = append(argSets, args)
-		}
-
-		res := []respElement{}
-		for _, args := range argSets {
-			res = append(res, rc.cmd(args)...)
-		}
-
-		for _, e := range res {
-			var w = []byte{}
-			if e != nil {
-				w = []byte(e.ToString())
-			}
-			_, err = conn.Write(w)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, err.Error())
-				return
-			}
-		}
-	}
 }
 
 func main() {
@@ -96,6 +104,7 @@ func main() {
 		fmt.Println(err)
 		os.Exit(1)
 	}
+
 	if replicaOf == "" {
 		role = "master"
 		replId = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb"
@@ -112,17 +121,13 @@ func main() {
 			os.Exit(1)
 		}
 
-		err = replSendHandshake(conn)
-		if err != nil {
-			os.Exit(1)
+		rmc := &redisMasterConn{
+			redisConn: redisConn{
+				conn: conn,
+			},
 		}
 
-		err = replPsync(conn)
-		if err != nil {
-			os.Exit(1)
-		}
-
-		go handleConnection(conn, true)
+		go handleConnection(rmc)
 	}
 
 	l, err := net.Listen("tcp", "0.0.0.0:"+port)
@@ -137,6 +142,9 @@ func main() {
 			fmt.Println("Error accepting connection: ", err.Error())
 			os.Exit(1)
 		}
-		go handleConnection(conn, false)
+		rc := &redisConn{
+			conn: conn,
+		}
+		go handleConnection(rc)
 	}
 }

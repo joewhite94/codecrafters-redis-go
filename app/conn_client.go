@@ -9,19 +9,38 @@ import (
 	"time"
 )
 
-type redisConn struct {
-	conn   net.Conn
-	isRepl bool
-	multi  bool
-	queue  [][]string
-}
+// handling for connections to, and commands received from, clients and replicas
+// instance cannot determine if a connection is a replica at the point of connection, only upon receipt of psync
 
 var transactionalCmds = []string{"DISCARD", "EXEC"}
 var writeCmds = []string{"DEL", "INCR", "LPOP", "LPUSH", "RPUSH", "SET", "XADD"}
-
 var emptyRdb = "UkVESVMwMDEx+glyZWRpcy12ZXIFNy4yLjD6CnJlZGlzLWJpdHPAQPoFY3RpbWXCbQi8ZfoIdXNlZC1tZW3CsMQQAPoIYW9mLWJhc2XAAP/wbjv+wP9aog=="
 
-func (rc *redisConn) cmd(args []string) []respElement {
+var replicas = []*redisConn{}
+
+type redisConn struct {
+	conn  net.Conn
+	multi bool
+	queue [][]string
+}
+
+func (rc *redisConn) Close() {
+	rc.conn.Close()
+}
+
+func (rc *redisConn) Read(b []byte) (int, error) {
+	return rc.conn.Read(b)
+}
+
+func (rc *redisConn) Init() error {
+	return nil
+}
+
+func (rc *redisConn) Write(b []byte) (int, error) {
+	return rc.conn.Write(b)
+}
+
+func (rc *redisConn) Cmd(args []string) []respElement {
 	res := []respElement{}
 	if rc.multi && !slices.Contains(transactionalCmds, args[0]) {
 		rc.queueCmd(args)
@@ -34,6 +53,17 @@ func (rc *redisConn) cmd(args []string) []respElement {
 	return res
 }
 
+func propagateCmd(args []string) {
+	resp := writeRespInput(args)
+	for i, r := range replicas {
+		_, err := r.conn.Write([]byte(resp.ToString()))
+		if err != nil {
+			fmt.Printf("Failed to propagate command %s to replica %v: %s\n", args[0], i, err.Error())
+			continue
+		}
+	}
+}
+
 func (rc *redisConn) queueCmd(args []string) {
 	rc.queue = append(rc.queue, args)
 }
@@ -44,7 +74,7 @@ func (rc *redisConn) runCmd(args []string) []respElement {
 	cmd := args[0]
 
 	if role == "master" && slices.Contains(writeCmds, cmd) {
-		replPropagate(args)
+		propagateCmd(args)
 	}
 
 	switch cmd {
@@ -244,9 +274,6 @@ func (rc *redisConn) cmdIncr(args []string) respElement {
 		value: i,
 	}
 
-	if rc.isRepl {
-		return nil
-	}
 	return res
 }
 
@@ -258,9 +285,6 @@ func (rc *redisConn) cmdInfo(args []string) respElement {
 		res.value = fmt.Sprintf("role:%s\nmaster_replid:%s\nmaster_repl_offset:%v", role, replId, replOffset)
 	}
 
-	if rc.isRepl {
-		return nil
-	}
 	return res
 }
 
@@ -284,9 +308,6 @@ func (rc *redisConn) cmdLlen(args []string) respElement {
 		value: len(arr.value),
 	}
 
-	if rc.isRepl {
-		return nil
-	}
 	return res
 }
 
@@ -340,9 +361,6 @@ func (rc *redisConn) cmdLpop(args []string) respElement {
 		db.Store(key, list)
 	}
 
-	if rc.isRepl {
-		return nil
-	}
 	return res
 }
 
@@ -375,9 +393,6 @@ func (rc *redisConn) cmdLpush(args []string) respElement {
 		value: len(list.value),
 	}
 
-	if rc.isRepl {
-		return nil
-	}
 	return res
 }
 
@@ -459,9 +474,6 @@ func (rc *redisConn) cmdLrange(args []string) respElement {
 		res.value[i] = li.ToResp()
 	}
 
-	if rc.isRepl {
-		return nil
-	}
 	return res
 }
 
@@ -470,9 +482,6 @@ func (rc *redisConn) cmdMulti() respElement {
 	res := &respSimpleString{
 		value: "OK",
 	}
-	if rc.isRepl {
-		return nil
-	}
 	return res
 }
 
@@ -480,21 +489,20 @@ func (rc *redisConn) cmdPing() respElement {
 	res := &respSimpleString{
 		value: "PONG",
 	}
-	if rc.isRepl {
-		return nil
-	}
 	return res
 }
 
 func (rc *redisConn) cmdPsync() respElement {
-	replicas = append(replicas, &replSlave{
-		conn: rc.conn,
-	})
+	if role != "master" {
+		res := &respError{
+			value: "ERR Attempting to PSYNC replica",
+		}
+		return res
+	}
+
+	replicas = append(replicas, rc)
 	res := &respSimpleString{
 		value: "FULLRESYNC " + replId + " " + strconv.Itoa(replOffset),
-	}
-	if rc.isRepl {
-		return nil
 	}
 	return res
 }
@@ -503,32 +511,10 @@ func (rc *redisConn) cmdPsyncSendRdb() respElement {
 	res := &respRdb{
 		value: emptyRdb,
 	}
-	if rc.isRepl {
-		return nil
-	}
 	return res
 }
 
-func (rc *redisConn) cmdReplconf(args []string) respElement {
-	if slices.ContainsFunc(args, func(e string) bool {
-		return strings.ToLower(e) == "getack"
-	}) {
-		res := &respArray{
-			value: []respElement{
-				&respBulkString{
-					value: "REPLCONF",
-				},
-				&respBulkString{
-					value: "ACK",
-				},
-				&respBulkString{
-					value: strconv.Itoa(replOffset),
-				},
-			},
-		}
-		return res
-	}
-
+func (rc *redisConn) cmdReplconf(_ []string) respElement {
 	res := &respSimpleString{
 		value: "OK",
 	}
@@ -562,10 +548,6 @@ func (rc *redisConn) cmdRpush(args []string) respElement {
 
 	res := &respInteger{
 		value: len(list.value),
-	}
-
-	if rc.isRepl {
-		return nil
 	}
 	return res
 }
@@ -610,9 +592,6 @@ func (rc *redisConn) cmdSet(args []string) respElement {
 		value: "OK",
 	}
 
-	if rc.isRepl {
-		return nil
-	}
 	return res
 }
 
@@ -631,9 +610,6 @@ func (rc *redisConn) cmdType(args []string) respElement {
 		value: val.Type(),
 	}
 
-	if rc.isRepl {
-		return nil
-	}
 	return res
 }
 
@@ -760,9 +736,6 @@ func (rc *redisConn) cmdXadd(args []string) respElement {
 		value: entry.id.value,
 	}
 
-	if rc.isRepl {
-		return nil
-	}
 	return res
 }
 
@@ -891,9 +864,6 @@ func (rc *redisConn) cmdXrange(args []string) respElement {
 
 	arr.value = arr.value[startIndex:stopIndex]
 
-	if rc.isRepl {
-		return nil
-	}
 	return arr
 }
 
@@ -1016,8 +986,5 @@ func (rc *redisConn) cmdXread(args []string) respElement {
 		}))
 	}
 
-	if rc.isRepl {
-		return nil
-	}
 	return res.ToResp()
 }
