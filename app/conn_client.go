@@ -69,6 +69,8 @@ func (rc *redisConn) runCmd(as argSet) []respElement {
 	switch cmd {
 	case "BLPOP":
 		res = append(res, rc.cmdBlpop(args))
+	case "CONFIG":
+		res = append(res, rc.cmdConfig(args))
 	case "DISCARD":
 		res = append(res, rc.cmdDiscard())
 	case "ECHO":
@@ -181,6 +183,47 @@ func (rc *redisConn) cmdBlpop(args []string) respElement {
 		}
 	}
 
+	return res
+}
+
+func (rc *redisConn) cmdConfig(args []string) respElement {
+	if len(args) < 3 {
+		res := &respError{
+			value: "ERR CONFIG requires parameters",
+		}
+		return res
+	}
+
+	if args[1] == "GET" {
+		res := &respArray{
+			value: []respElement{
+				&respBulkString{
+					value: args[2],
+				},
+			},
+		}
+
+		var val string
+		switch args[2] {
+		case "dbfilename":
+			val = dbFileName
+		case "dir":
+			val = dir
+		default:
+			res := &respError{
+				value: "ERR Unknown key for CONFIG",
+			}
+			return res
+		}
+		res.value = append(res.value, &respBulkString{
+			value: val,
+		})
+		return res
+	}
+
+	res := &respError{
+		value: "ERR Unknown argument for CONFIG",
+	}
 	return res
 }
 

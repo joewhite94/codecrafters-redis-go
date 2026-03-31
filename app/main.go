@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-var port, replId, role string
+var dbFileName, dir, port, replId, role string
 var replOffset int
 
 type redisConnection interface {
@@ -111,6 +111,18 @@ func main() {
 	}
 
 	replicaOf, err := getArg("--replicaof")
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+
+	dbFileName, err = getArg("--dbfilename")
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+
+	dir, err = getArg("--dir")
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
