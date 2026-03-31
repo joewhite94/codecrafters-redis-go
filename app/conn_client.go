@@ -60,8 +60,6 @@ func (rc *redisConn) runCmd(as argSet) []respElement {
 
 	args := as.args
 
-	fmt.Printf("%v %v\n", role, args)
-
 	cmd := args[0]
 
 	if role == "master" && slices.Contains(writeCmds, cmd) {
