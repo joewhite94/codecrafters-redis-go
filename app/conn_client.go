@@ -16,8 +16,6 @@ var transactionalCmds = []string{"DISCARD", "EXEC"}
 var writeCmds = []string{"DEL", "INCR", "LPOP", "LPUSH", "RPUSH", "SET", "XADD"}
 var emptyRdb = "UkVESVMwMDEx+glyZWRpcy12ZXIFNy4yLjD6CnJlZGlzLWJpdHPAQPoFY3RpbWXCbQi8ZfoIdXNlZC1tZW3CsMQQAPoIYW9mLWJhc2XAAP/wbjv+wP9aog=="
 
-var replicas = []*redisConn{}
-
 type redisConn struct {
 	conn  net.Conn
 	multi bool
@@ -53,17 +51,6 @@ func (rc *redisConn) Cmd(as argSet) []respElement {
 	return res
 }
 
-func propagateCmd(args []string) {
-	resp := writeRespInput(args)
-	for i, r := range replicas {
-		_, err := r.conn.Write([]byte(resp.ToString()))
-		if err != nil {
-			fmt.Printf("Failed to propagate command %s to replica %v: %s\n", args[0], i, err.Error())
-			continue
-		}
-	}
-}
-
 func (rc *redisConn) queueCmd(as argSet) {
 	rc.queue = append(rc.queue, as)
 }
@@ -72,6 +59,8 @@ func (rc *redisConn) runCmd(as argSet) []respElement {
 	var res []respElement
 
 	args := as.args
+
+	fmt.Printf("%v %v\n", role, args)
 
 	cmd := args[0]
 
@@ -131,6 +120,10 @@ func (rc *redisConn) runCmd(as argSet) []respElement {
 				value: "ERR Unknown command",
 			},
 		}
+	}
+
+	if slices.Contains(writeCmds, cmd) {
+		replOffset += as.bytes
 	}
 	return res
 }
@@ -504,7 +497,9 @@ func (rc *redisConn) cmdPsync() respElement {
 		return res
 	}
 
-	replicas = append(replicas, rc)
+	replicas = append(replicas, &redisReplicaConn{
+		rc: rc,
+	})
 	res := &respSimpleString{
 		value: "FULLRESYNC " + replId + " " + strconv.Itoa(replOffset),
 	}
@@ -514,13 +509,6 @@ func (rc *redisConn) cmdPsync() respElement {
 func (rc *redisConn) cmdPsyncSendRdb() respElement {
 	res := &respRdb{
 		value: emptyRdb,
-	}
-	return res
-}
-
-func (rc *redisConn) cmdReplconf(_ []string) respElement {
-	res := &respSimpleString{
-		value: "OK",
 	}
 	return res
 }
@@ -617,9 +605,66 @@ func (rc *redisConn) cmdType(args []string) respElement {
 	return res
 }
 
-func (rc *redisConn) cmdWait(_ []string) respElement {
-	res := &respInteger{
-		value: len(replicas),
+func (rc *redisConn) cmdWait(args []string) respElement {
+	res := &respInteger{}
+
+	targetReplicaCount, err := strconv.Atoi(args[1])
+	if err != nil {
+		res := &respError{
+			value: "ERR Unable to convert WAIT replica count to int",
+		}
+		return res
+	}
+
+	var deadline time.Time
+	var timeoutDuration time.Duration
+	if len(args) > 2 {
+		timeout := args[2]
+		timeFloat, err := strconv.ParseFloat(timeout, 64)
+		if err != nil {
+			res := &respError{
+				value: "ERR Unable to convert WAIT timeout to float",
+			}
+			return res
+		}
+		timeoutDuration = time.Millisecond * time.Duration(timeFloat)
+		deadline = time.Now().Add(timeoutDuration)
+	}
+
+	// instruct all replicas to sync
+	for _, rep := range replicas {
+		if rep.offset != replOffset {
+			w := &respArray{
+				value: []respElement{
+					&respBulkString{
+						value: "REPLCONF",
+					},
+					&respBulkString{
+						value: "GETACK",
+					},
+					&respBulkString{
+						value: "*",
+					},
+				},
+			}
+			rep.rc.conn.Write([]byte(w.ToString()))
+		}
+	}
+
+	// wait for replicas to sync - rep.offset is updated in conn_replica.go, cmdReplConf
+	var syncedReplicas int
+	for syncedReplicas < targetReplicaCount {
+		syncedReplicas = 0
+		for _, rep := range replicas {
+			if rep.offset >= replOffset {
+				syncedReplicas++
+			}
+		}
+
+		res.value = syncedReplicas
+		if syncedReplicas == targetReplicaCount || timeoutDuration > 0 && time.Now().After(deadline) {
+			break
+		}
 	}
 
 	return res

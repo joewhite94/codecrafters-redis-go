@@ -11,7 +11,6 @@ import (
 
 type redisMasterConn struct {
 	redisConn
-	readBytesTotal int
 }
 
 func (rmc *redisMasterConn) Read(b []byte) (int, error) {
@@ -46,12 +45,14 @@ func (rmc *redisMasterConn) runCmd(as argSet) []respElement {
 	switch cmd {
 	case "+FULLRESYNC":
 		return nil
+	case "PING":
+		rmc.redisConn.cmdPing()
+		replOffset += as.bytes
 	case "REPLCONF":
 		res = append(res, rmc.cmdReplconf(args))
-		rmc.readBytesTotal += as.bytes
+		replOffset += as.bytes
 	default:
-		_ = rmc.redisConn.runCmd(as)
-		rmc.readBytesTotal += as.bytes
+		rmc.redisConn.runCmd(as)
 	}
 	return res
 }
@@ -69,7 +70,7 @@ func (rmc *redisMasterConn) cmdReplconf(args []string) respElement {
 					value: "ACK",
 				},
 				&respBulkString{
-					value: strconv.Itoa(rmc.readBytesTotal),
+					value: strconv.Itoa(replOffset),
 				},
 			},
 		}
@@ -156,7 +157,7 @@ func (rmc *redisMasterConn) sendPsync() error {
 	var err error
 
 	var psyncReplId string = replId
-	var psyncReplOffset int = rmc.readBytesTotal
+	var psyncReplOffset int = replOffset
 	if psyncReplId == "" {
 		psyncReplId = "?"
 		psyncReplOffset = -1
