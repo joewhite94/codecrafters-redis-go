@@ -25,6 +25,28 @@ func propagateCmd(args []string) {
 	}
 }
 
+func replconfAllReplicas() {
+	w := &respArray{
+		value: []respElement{
+			&respBulkString{
+				value: "REPLCONF",
+			},
+			&respBulkString{
+				value: "GETACK",
+			},
+			&respBulkString{
+				value: "*",
+			},
+		},
+	}
+	bytes := []byte(w.ToString())
+	for _, rep := range replicas {
+		rep.rc.conn.Write(bytes)
+	}
+	// replicas will increment their offset according to the replconf
+	replOffset += len(bytes)
+}
+
 func (rc *redisConn) cmdReplconf(args []string) respElement {
 	var res respElement
 

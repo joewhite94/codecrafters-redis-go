@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"slices"
 	"strconv"
 	"strings"
 )
@@ -49,18 +48,24 @@ func (rmc *redisMasterConn) runCmd(as argSet) []respElement {
 		rmc.redisConn.cmdPing()
 		replOffset += as.bytes
 	case "REPLCONF":
-		res = append(res, rmc.cmdReplconf(args))
-		replOffset += as.bytes
+		res = append(res, rmc.cmdReplconf(as))
 	default:
 		rmc.redisConn.runCmd(as)
 	}
 	return res
 }
 
-func (rmc *redisMasterConn) cmdReplconf(args []string) respElement {
-	if slices.ContainsFunc(args, func(e string) bool {
-		return strings.ToLower(e) == "getack"
-	}) {
+func (rmc *redisMasterConn) cmdReplconf(as argSet) respElement {
+	args := as.args
+
+	if len(args) < 2 {
+		res := &respError{
+			value: "ERR Insufficient arguments provided for REPLCONF",
+		}
+		return res
+	}
+
+	if strings.ToLower(args[1]) == "getack" {
 		res := &respArray{
 			value: []respElement{
 				&respBulkString{
@@ -74,8 +79,13 @@ func (rmc *redisMasterConn) cmdReplconf(args []string) respElement {
 				},
 			},
 		}
+		// master will increment its offset according to the replconf
+		if role == "slave" {
+			replOffset += as.bytes
+		}
 		return res
 	}
+
 	res := &respSimpleString{
 		value: "OK",
 	}

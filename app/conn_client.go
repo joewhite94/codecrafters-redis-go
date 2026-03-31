@@ -604,6 +604,8 @@ func (rc *redisConn) cmdType(args []string) respElement {
 }
 
 func (rc *redisConn) cmdWait(args []string) respElement {
+	// TODO: Handle behaviour of wait command on replicas
+
 	res := &respInteger{}
 
 	targetReplicaCount, err := strconv.Atoi(args[1])
@@ -629,39 +631,26 @@ func (rc *redisConn) cmdWait(args []string) respElement {
 		deadline = time.Now().Add(timeoutDuration)
 	}
 
-	// instruct all replicas to sync
-	for _, rep := range replicas {
-		if rep.offset != replOffset {
-			w := &respArray{
-				value: []respElement{
-					&respBulkString{
-						value: "REPLCONF",
-					},
-					&respBulkString{
-						value: "GETACK",
-					},
-					&respBulkString{
-						value: "*",
-					},
-				},
-			}
-			rep.rc.conn.Write([]byte(w.ToString()))
-		}
-	}
+	if replOffset == 0 {
+		res.value = len(replicas)
+	} else {
+		targetOffset := replOffset
+		replconfAllReplicas()
 
-	// wait for replicas to sync - rep.offset is updated in conn_replica.go, cmdReplConf
-	var syncedReplicas int
-	for syncedReplicas < targetReplicaCount {
-		syncedReplicas = 0
-		for _, rep := range replicas {
-			if rep.offset >= replOffset {
-				syncedReplicas++
+		// wait for replicas to sync - rep.offset is updated in conn_replica.go, cmdReplConf
+		var syncedReplicas int
+		for syncedReplicas < targetReplicaCount {
+			syncedReplicas = 0
+			for _, rep := range replicas {
+				if rep.offset == targetOffset {
+					syncedReplicas++
+				}
 			}
-		}
 
-		res.value = syncedReplicas
-		if syncedReplicas == targetReplicaCount || timeoutDuration > 0 && time.Now().After(deadline) {
-			break
+			res.value = syncedReplicas
+			if syncedReplicas == targetReplicaCount || timeoutDuration > 0 && time.Now().After(deadline) {
+				break
+			}
 		}
 	}
 
